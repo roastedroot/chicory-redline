@@ -48,12 +48,12 @@ public final class CraneliftBridge implements AutoCloseable {
 
     public void init(String target) {
         byte[] bytes = target.getBytes();
-        // TODO: code smell, fixme!
-        int ptr = 1024;
+        int ptr = exports.wasmMalloc(bytes.length);
         for (int i = 0; i < bytes.length; i++) {
             exports.memory().writeByte(ptr + i, bytes[i]);
         }
         exports.init(ptr, bytes.length);
+        exports.wasmFree(ptr, bytes.length);
     }
 
     public CraneliftBridge_ModuleExports exports() {

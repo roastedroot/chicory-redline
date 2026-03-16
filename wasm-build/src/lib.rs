@@ -64,6 +64,20 @@ fn s() -> &'static mut Session {
     unsafe { SESSION.as_mut().unwrap() }
 }
 
+// --- malloc/free using Rust's global allocator ---
+
+#[no_mangle]
+pub extern "C" fn wasm_malloc(size: u32) -> *mut u8 {
+    let layout = std::alloc::Layout::from_size_align(size as usize, 8).unwrap();
+    unsafe { std::alloc::alloc(layout) }
+}
+
+#[no_mangle]
+pub extern "C" fn wasm_free(ptr: *mut u8, size: u32) {
+    let layout = std::alloc::Layout::from_size_align(size as usize, 8).unwrap();
+    unsafe { std::alloc::dealloc(ptr, layout) }
+}
+
 // --- Exported functions ---
 
 #[no_mangle]

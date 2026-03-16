@@ -53,14 +53,7 @@
             <configuration>
               <name>io.roastedroot.cranelift.bridge.Cranelift</name>
               <wasmFile>${project.basedir}/../cranelift_bridge.wasm</wasmFile>
-              <!-- <interpreterFallback>WARN</interpreterFallback> -->
-              <interpretedFunctions>
-                <function>2500</function>
-                <function>2571</function>
-                <function>3119</function>
-                <function>3772</function>
-                <function>4424</function>
-              </interpretedFunctions>
+              <interpreterFallback>WARN</interpreterFallback>
             </configuration>
           </execution>
         </executions>

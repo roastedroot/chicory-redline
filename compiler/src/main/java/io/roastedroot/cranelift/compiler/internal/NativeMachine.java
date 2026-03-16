@@ -1,12 +1,12 @@
 package io.roastedroot.cranelift.compiler.internal;
 
-import com.dylibso.chicory.cranelift.CraneliftBridge;
 import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.runtime.Machine;
 import com.dylibso.chicory.wasm.ChicoryException;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.ValType;
 import com.dylibso.chicory.wasm.types.Value;
+import io.roastedroot.cranelift.bridge.CraneliftBridge;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -205,7 +205,7 @@ final class NativeMachine implements Machine {
                     try {
                         MemorySegment stub = createImportStub(funcId, funcType);
                         funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, stub.address());
-                    } catch (Exception e) {
+                    } catch (RuntimeException e) {
                         System.err.println(
                                 "WARNING: Safety stub failed for func "
                                         + funcId
@@ -236,7 +236,7 @@ final class NativeMachine implements Machine {
         public void run() {
             try {
                 arena.close();
-            } catch (Exception e) {
+            } catch (IllegalStateException e) {
                 // ignore — may already be closed
             }
             try {
@@ -348,7 +348,7 @@ final class NativeMachine implements Machine {
             }
 
             return Linker.nativeLinker().upcallStub(dropper, desc, arena);
-        } catch (Exception e) {
+        } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new ChicoryException("Failed to create import stub for func " + funcId, e);
         }
     }
@@ -391,7 +391,7 @@ final class NativeMachine implements Machine {
                                     MethodType.methodType(long.class, long.class));
             var desc = FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG);
             return Linker.nativeLinker().upcallStub(handler, desc, arena);
-        } catch (Exception e) {
+        } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new ChicoryException("Failed to create trampoline stub", e);
         }
     }
@@ -595,7 +595,7 @@ final class NativeMachine implements Machine {
                                     MethodType.methodType(long.class, long.class));
             var desc = FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG);
             return Linker.nativeLinker().upcallStub(handler, desc, arena);
-        } catch (Exception e) {
+        } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new ChicoryException("Failed to create memory grow stub", e);
         }
     }
@@ -633,7 +633,9 @@ final class NativeMachine implements Machine {
      * from native code's perspective — imported mutable globals are rare).
      */
     private void initializeImportGlobals() {
-        if (importGlobalsInitialized || globalCount == 0) return;
+        if (importGlobalsInitialized || globalCount == 0) {
+            return;
+        }
         importGlobalsInitialized = true;
 
         // Module-defined globals are already NativeGlobalInstance (created by globalFactory).
@@ -654,7 +656,9 @@ final class NativeMachine implements Machine {
     }
 
     private void initializeNativeTables() {
-        if (tablesInitialized) return;
+        if (tablesInitialized) {
+            return;
+        }
         tablesInitialized = true;
 
         var module = instance.module();
@@ -728,23 +732,43 @@ final class NativeMachine implements Machine {
     // --- Main dispatch ---
 
     private ValueLayout valTypeToLayout(ValType type) {
-        if (type.equals(ValType.I32)) return ValueLayout.JAVA_INT;
-        if (type.equals(ValType.I64)) return ValueLayout.JAVA_LONG;
-        if (type.equals(ValType.F32)) return ValueLayout.JAVA_FLOAT;
-        if (type.equals(ValType.F64)) return ValueLayout.JAVA_DOUBLE;
+        if (type.equals(ValType.I32)) {
+            return ValueLayout.JAVA_INT;
+        }
+        if (type.equals(ValType.I64)) {
+            return ValueLayout.JAVA_LONG;
+        }
+        if (type.equals(ValType.F32)) {
+            return ValueLayout.JAVA_FLOAT;
+        }
+        if (type.equals(ValType.F64)) {
+            return ValueLayout.JAVA_DOUBLE;
+        }
         // Reference types (funcref, externref) are opaque i64
         int op = type.opcode();
-        if (op == ValType.ID.RefNull || op == ValType.ID.Ref) return ValueLayout.JAVA_LONG;
+        if (op == ValType.ID.RefNull || op == ValType.ID.Ref) {
+            return ValueLayout.JAVA_LONG;
+        }
         throw new ChicoryException("Unsupported type for native: " + type);
     }
 
     private Class<?> valTypeToJavaClass(ValType type) {
-        if (type.equals(ValType.I32)) return int.class;
-        if (type.equals(ValType.I64)) return long.class;
-        if (type.equals(ValType.F32)) return float.class;
-        if (type.equals(ValType.F64)) return double.class;
+        if (type.equals(ValType.I32)) {
+            return int.class;
+        }
+        if (type.equals(ValType.I64)) {
+            return long.class;
+        }
+        if (type.equals(ValType.F32)) {
+            return float.class;
+        }
+        if (type.equals(ValType.F64)) {
+            return double.class;
+        }
         int op = type.opcode();
-        if (op == ValType.ID.RefNull || op == ValType.ID.Ref) return long.class;
+        if (op == ValType.ID.RefNull || op == ValType.ID.Ref) {
+            return long.class;
+        }
         throw new ChicoryException("Unsupported type: " + type);
     }
 
@@ -818,8 +842,12 @@ final class NativeMachine implements Machine {
             if (pendingException != null) {
                 var ex = pendingException;
                 pendingException = null;
-                if (ex instanceof ChicoryException ce) throw ce;
-                if (ex instanceof RuntimeException re) throw re;
+                if (ex instanceof ChicoryException ce) {
+                    throw ce;
+                }
+                if (ex instanceof RuntimeException re) {
+                    throw re;
+                }
                 throw new ChicoryException("Exception in native upcall", ex);
             }
 

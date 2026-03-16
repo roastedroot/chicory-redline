@@ -831,7 +831,7 @@ final class NativeEmitters {
         int mergeBlock = b.createBlock();
         int mergeParam =
                 b.appendBlockParam(
-                        mergeBlock, com.dylibso.chicory.cranelift.CraneliftBridge.TYPE_I32);
+                        mergeBlock, io.roastedroot.cranelift.bridge.CraneliftBridge.TYPE_I32);
 
         b.emitBrif(fail, failBlock, okBlock);
 

@@ -80,21 +80,25 @@ public final class NativeMemory implements Memory {
         return limits.shared();
     }
 
+    @SuppressWarnings("removal")
     @Override
     public Object lock(int address) {
         return new Object();
     }
 
+    @SuppressWarnings("removal")
     @Override
     public int waitOn(int address, int expected, long timeout) {
         throw new ChicoryException("waitOn not supported on NativeMemory");
     }
 
+    @SuppressWarnings("removal")
     @Override
     public int waitOn(int address, long expected, long timeout) {
         throw new ChicoryException("waitOn not supported on NativeMemory");
     }
 
+    @SuppressWarnings("removal")
     @Override
     public int notify(int address, int maxThreads) {
         return 0;
@@ -103,7 +107,9 @@ public final class NativeMemory implements Memory {
     @Override
     public void initialize(Instance instance, DataSegment[] dataSegments) {
         this.dataSegments = dataSegments;
-        if (dataSegments == null) return;
+        if (dataSegments == null) {
+            return;
+        }
         for (var s : dataSegments) {
             if (s instanceof ActiveDataSegment) {
                 var seg = (ActiveDataSegment) s;

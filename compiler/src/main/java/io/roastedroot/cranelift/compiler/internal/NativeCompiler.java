@@ -1,12 +1,12 @@
 package io.roastedroot.cranelift.compiler.internal;
 
-import com.dylibso.chicory.cranelift.CraneliftBridge;
 import com.dylibso.chicory.wasm.WasmModule;
 import com.dylibso.chicory.wasm.types.AnnotatedInstruction;
 import com.dylibso.chicory.wasm.types.ExternalType;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.OpCode;
 import com.dylibso.chicory.wasm.types.ValType;
+import io.roastedroot.cranelift.bridge.CraneliftBridge;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
@@ -127,7 +127,7 @@ final class NativeCompiler {
         for (int i = 0; i < count; i++) {
             try {
                 results[i] = compileFunction(i);
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 System.err.println("Failed to compile function " + i + ": " + e.getMessage());
                 results[i] = null;
             }
@@ -385,7 +385,9 @@ final class NativeCompiler {
 
     private FunctionType decodeBlockType(AnnotatedInstruction ins) {
         long typeId = ins.operands()[0];
-        if (typeId == 0x40) return FunctionType.empty();
+        if (typeId == 0x40) {
+            return FunctionType.empty();
+        }
         if (ValType.isValid(typeId)) {
             return FunctionType.returning(ValType.builder().fromId(typeId).build());
         }
@@ -396,7 +398,9 @@ final class NativeCompiler {
 
     private static ControlFrame getControlFrame(Deque<ControlFrame> controlStack, int depth) {
         Iterator<ControlFrame> it = controlStack.iterator();
-        for (int i = 0; i < depth; i++) it.next();
+        for (int i = 0; i < depth; i++) {
+            it.next();
+        }
         return it.next();
     }
 
@@ -442,10 +446,18 @@ final class NativeCompiler {
     }
 
     private int emitZero(ValType type) {
-        if (type.equals(ValType.I32)) return bridge.exports().emitIconst32(0);
-        if (type.equals(ValType.I64)) return bridge.exports().emitIconst64(0, 0);
-        if (type.equals(ValType.F32)) return bridge.exports().emitF32const(0);
-        if (type.equals(ValType.F64)) return bridge.exports().emitF64const(0, 0);
+        if (type.equals(ValType.I32)) {
+            return bridge.exports().emitIconst32(0);
+        }
+        if (type.equals(ValType.I64)) {
+            return bridge.exports().emitIconst64(0, 0);
+        }
+        if (type.equals(ValType.F32)) {
+            return bridge.exports().emitF32const(0);
+        }
+        if (type.equals(ValType.F64)) {
+            return bridge.exports().emitF64const(0, 0);
+        }
         // Reference types use i64 representation
         int op = type.opcode();
         if (op == ValType.ID.RefNull || op == ValType.ID.Ref) {
@@ -1278,7 +1290,9 @@ final class NativeCompiler {
 
             case BLOCK:
             case LOOP:
-                if (isDummy) break;
+                if (isDummy) {
+                    break;
+                }
                 if (!dead) {
                     emitJumpToBlock(frame.mergeBlock, frame.blockType.returns().size(), valueStack);
                 } else if (frame.mergeParamIds.length > 0) {
@@ -1295,7 +1309,9 @@ final class NativeCompiler {
                 break;
 
             case IF:
-                if (isDummy) break;
+                if (isDummy) {
+                    break;
+                }
                 if (!frame.hasElse) {
                     if (!dead) {
                         emitJumpToBlock(

@@ -1,11 +1,11 @@
 package io.roastedroot.cranelift.compiler.internal;
 
-import com.dylibso.chicory.cranelift.CraneliftBridge;
 import com.dylibso.chicory.wasm.WasmModule;
 import com.dylibso.chicory.wasm.types.ExternalType;
 import com.dylibso.chicory.wasm.types.FunctionImport;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.ValType;
+import io.roastedroot.cranelift.bridge.CraneliftBridge;
 import java.util.Map;
 
 /**
@@ -53,10 +53,18 @@ final class EmitContext {
     // --- Helpers used by emitters ---
 
     int emitZero(ValType type) {
-        if (type.equals(ValType.I32)) return bridge.exports().emitIconst32(0);
-        if (type.equals(ValType.I64)) return bridge.exports().emitIconst64(0, 0);
-        if (type.equals(ValType.F32)) return bridge.exports().emitF32const(0);
-        if (type.equals(ValType.F64)) return bridge.exports().emitF64const(0, 0);
+        if (type.equals(ValType.I32)) {
+            return bridge.exports().emitIconst32(0);
+        }
+        if (type.equals(ValType.I64)) {
+            return bridge.exports().emitIconst64(0, 0);
+        }
+        if (type.equals(ValType.F32)) {
+            return bridge.exports().emitF32const(0);
+        }
+        if (type.equals(ValType.F64)) {
+            return bridge.exports().emitF64const(0, 0);
+        }
         int op = type.opcode();
         if (op == ValType.ID.RefNull || op == ValType.ID.Ref) {
             return bridge.exports().emitIconst64(0, 0);
@@ -65,12 +73,22 @@ final class EmitContext {
     }
 
     static int valTypeToBridgeType(ValType type) {
-        if (type.equals(ValType.I32)) return CraneliftBridge.TYPE_I32;
-        if (type.equals(ValType.I64)) return CraneliftBridge.TYPE_I64;
-        if (type.equals(ValType.F32)) return CraneliftBridge.TYPE_F32;
-        if (type.equals(ValType.F64)) return CraneliftBridge.TYPE_F64;
+        if (type.equals(ValType.I32)) {
+            return CraneliftBridge.TYPE_I32;
+        }
+        if (type.equals(ValType.I64)) {
+            return CraneliftBridge.TYPE_I64;
+        }
+        if (type.equals(ValType.F32)) {
+            return CraneliftBridge.TYPE_F32;
+        }
+        if (type.equals(ValType.F64)) {
+            return CraneliftBridge.TYPE_F64;
+        }
         int op = type.opcode();
-        if (op == ValType.ID.RefNull || op == ValType.ID.Ref) return CraneliftBridge.TYPE_I64;
+        if (op == ValType.ID.RefNull || op == ValType.ID.Ref) {
+            return CraneliftBridge.TYPE_I64;
+        }
         throw new UnsupportedOperationException("Unsupported ValType for native: " + type);
     }
 
@@ -180,7 +198,9 @@ final class EmitContext {
     int getOrCreateSigRef(FunctionType ft) {
         String key = ft.toString();
         Integer cached = sigRefCache.get(key);
-        if (cached != null) return cached;
+        if (cached != null) {
+            return cached;
+        }
 
         bridge.exports().beginSig();
         bridge.exports().sigAddParam(CraneliftBridge.TYPE_I64); // memBase
@@ -199,7 +219,9 @@ final class EmitContext {
     int getOrCreateMultiReturnSigRef(FunctionType ft) {
         String key = "__mr__" + ft.toString();
         Integer cached = sigRefCache.get(key);
-        if (cached != null) return cached;
+        if (cached != null) {
+            return cached;
+        }
 
         bridge.exports().beginSig();
         bridge.exports().sigAddParam(CraneliftBridge.TYPE_I64); // memBase
@@ -217,7 +239,9 @@ final class EmitContext {
     int getOrCreateTrampolineSigRef() {
         String key = "__trampoline__";
         Integer cached = sigRefCache.get(key);
-        if (cached != null) return cached;
+        if (cached != null) {
+            return cached;
+        }
 
         bridge.exports().beginSig();
         bridge.exports().sigAddParam(CraneliftBridge.TYPE_I64);
