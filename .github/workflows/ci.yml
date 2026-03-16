@@ -34,6 +34,7 @@ jobs:
       with:
         repository: andreaTP/chicory
         ref: exploration-cranelift
+        path: chicory
 
     - name: Set up Java
       uses: actions/setup-java@v5
