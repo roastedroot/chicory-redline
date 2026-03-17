@@ -1406,8 +1406,9 @@ pub extern "C" fn compile() -> u32 {
     builder.finalize();
     session.builder = std::ptr::null_mut();
 
-    // Compile
-    let mut ctx = Context::for_function((*session.func).clone());
+    // Take ownership of the function (avoids cloning the entire IR)
+    let func = std::mem::replace(&mut *session.func, Function::new());
+    let mut ctx = Context::for_function(func);
     let compiled = ctx
         .compile(isa.as_ref(), &mut ControlPlane::default())
         .expect("Compilation failed");

@@ -130,9 +130,8 @@ Current float-to-int trunc only checks NaN (fcmp NE x,x). Need range check:
 ### P1: Rust bridge cleanup
 
 - [ ] Guard `wasm_malloc(0)` — `std::alloc::alloc` with zero-sized layout is UB
-- [ ] Avoid cloning `Function` in `compile()` — use ownership instead of
-      `(*session.func).clone()`. Matters especially for large functions
-      (which are exactly the ones Cranelift4J targets)
+- [x] Avoid cloning `Function` in `compile()` — uses `std::mem::replace` to take
+      ownership instead of deep-copying the IR
 - [ ] Clear `Session` vecs after `compile()` to free memory between compilations
 - [ ] Add null guard in `b()` for clear error if builder is used after `compile()`
 - [ ] Pin `interpretedFunctions` in `bridge/pom.xml` (currently `interpreterFallback=WARN`)
