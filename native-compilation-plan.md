@@ -140,13 +140,18 @@ Testing Cranelift4J against real projects to find correctness issues.
 opcodes** (I32_ATOMIC_RMW_CMPXCHG, I32_ATOMIC_RMW_XCHG, MEM_ATOMIC_WAIT32,
 I32_ATOMIC_STORE, I32_ATOMIC_LOAD8_U). Atomic support deferred to a later
 phase — after higher-priority items and the maven plugin for build-time use.
+Make sure that if an instruction is not recognized the error is thrown at compile time and not runtime.
 
-**sqlite4j2** (all tests fail): All 2649 functions compile successfully (no
-missing opcodes), but execution hits `unreachable` trap during init
-(`WasmDBExports.<init>` line 112). This is a **code generation bug** — the
-compiled native code takes a wrong branch and hits an unreachable instruction.
-Needs investigation: identify which function traps, compare Cranelift output
-with interpreter behavior to find the divergence.
+**sqlite4j2** (all tests fail): All 2649 functions compile, but `xFuncPtr`
+(funcId=2468, body 2410, 1806 bytes, 29 locals) traps `unreachable` at runtime.
+The unreachable at offset `0xae9e7` is dead code after a loop — the native code
+incorrectly reaches it. Individual patterns tested in isolation (loop+br_if,
+deep nesting, host function calls, f64 select+call) all pass. The bug is likely
+a subtle interaction in the deeply nested control flow (br depths up to 9) of
+this specific function. Next steps:
+- Extract the exact xFuncPtr bytecode into a standalone .wat reproducer
+- Binary search: compile only half the function's blocks to isolate which
+  branch/comparison produces the wrong result
 
 **Factory reuse bug — FIXED**:
 - [x] `globalIndex` not reset between instances → IndexOutOfBoundsException
