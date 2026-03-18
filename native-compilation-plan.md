@@ -174,13 +174,10 @@ Native:        911,764 ops/s  (144x)   <- within 9% of JVM compiled
 Current memory.copy/fill go through Java trampoline (native -> upcall -> Java).
 Emit as native `memmove`/`memset` with inline OOB checks — no trampoline needed.
 
-### P2: Real workload validation (SQLite)
+### P2: Real workload validation
 
-SQLite wasm is ~3MB, 600+ functions. Need to validate:
-- Compilation of large modules (many functions, large code region)
-- WASI import compatibility (fd_write, proc_exit, etc.)
-- Memory limits interaction with NativeMemory
-- Possible unsupported opcodes in real-world C-compiled Wasm
+- [ ] bazel-wasm-repro toml2json: works correctly after memBase/br_table fixes, compilation slow (~80s)
+- [ ] SQLite (~3MB, 600+ functions): not yet tested
 
 ## How to build and test
 
