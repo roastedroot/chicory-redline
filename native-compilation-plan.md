@@ -125,6 +125,35 @@ Fixed issues:
       Edge splitting for FUNCTION targets and branches with args, matching
       wasmtime's approach.
 
+### P0: Real-world project validation
+
+Testing Cranelift4J against real projects to find correctness issues.
+
+| Project | Wasm size | Status | Notes |
+|---|---|---|---|
+| shootout benchmarks | ~12-37KB | PASS | Fixed: memBase reload, br_table jump table |
+| bazel-wasm-repro (toml2json) | 237KB | PASS | 279 funcs, 585ms execution, ~80s compilation |
+| jq4j | 951KB | FAIL (9/21) | Some functions fail to compile → `unreachable` at init |
+| sqlite4j2 | ~3MB | NOT TESTED | — |
+
+**jq4j investigation needed** (9 test errors):
+- `unreachable` trap during `Instance.initialize()` → `_initialize` calls a
+  function that failed to compile silently (`"Function 20 not compiled"`)
+- Need to: run compilation with stderr visible, identify which functions fail
+  and which opcodes/patterns cause the Cranelift bridge to trap
+- The failures happen inside the Cranelift bridge Wasm during `compile()` —
+  the bridge itself traps with "unreachable", meaning the IR we built is
+  invalid for those functions
+- Likely unsupported opcode patterns or edge cases in large functions
+- Approach: copy jq.wasm to test resources, write a test that compiles all
+  functions and asserts zero failures, then fix the compilation errors one
+  by one
+
+**Factory reuse bug — FIXED**:
+- [x] `globalIndex` not reset between instances → IndexOutOfBoundsException
+- [x] `nativeTables` not cleared between instances → stale table accumulation
+- Test: `FactoryReuseTest` covers both globals and tables reuse
+
 ### P1: Hybrid Machine — automatic threshold-based dispatch
 
 - [ ] Wire bytecode size threshold into `NativeMachineFactory` / `NativeCompiler`
