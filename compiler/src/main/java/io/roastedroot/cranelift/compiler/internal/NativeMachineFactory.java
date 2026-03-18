@@ -75,6 +75,18 @@ public final class NativeMachineFactory implements AutoCloseable {
     }
 
     public Machine compile(Instance instance) {
+        // Reset for reuse across multiple instances
+        int importGlobalCount =
+                (int)
+                        module.importSection().stream()
+                                .filter(
+                                        i ->
+                                                i.importType()
+                                                        == com.dylibso.chicory.wasm.types
+                                                                .ExternalType.GLOBAL)
+                                .count();
+        this.globalIndex = importGlobalCount;
+        this.nativeTables.clear();
         this.nativeMachine = new NativeMachine(instance, arena, nativeTables, globalsBuffer);
         return nativeMachine;
     }
