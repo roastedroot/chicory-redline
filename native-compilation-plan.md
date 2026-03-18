@@ -134,20 +134,19 @@ Testing Cranelift4J against real projects to find correctness issues.
 | shootout benchmarks | ~12-37KB | PASS | Fixed: memBase reload, br_table jump table |
 | bazel-wasm-repro (toml2json) | 237KB | PASS | 279 funcs, 585ms execution, ~80s compilation |
 | jq4j | 951KB | FAIL (9/21) | Some functions fail to compile → `unreachable` at init |
-| sqlite4j2 | ~3MB | NOT TESTED | — |
+| sqlite4j2 | 849KB | FAIL | All 2649 funcs compile, runtime `unreachable` trap |
 
-**jq4j investigation needed** (9 test errors):
-- `unreachable` trap during `Instance.initialize()` → `_initialize` calls a
-  function that failed to compile silently (`"Function 20 not compiled"`)
-- Need to: run compilation with stderr visible, identify which functions fail
-  and which opcodes/patterns cause the Cranelift bridge to trap
-- The failures happen inside the Cranelift bridge Wasm during `compile()` —
-  the bridge itself traps with "unreachable", meaning the IR we built is
-  invalid for those functions
-- Likely unsupported opcode patterns or edge cases in large functions
-- Approach: copy jq.wasm to test resources, write a test that compiles all
-  functions and asserts zero failures, then fix the compilation errors one
-  by one
+**jq4j** (9 test errors): 24 functions fail to compile due to missing **atomic
+opcodes** (I32_ATOMIC_RMW_CMPXCHG, I32_ATOMIC_RMW_XCHG, MEM_ATOMIC_WAIT32,
+I32_ATOMIC_STORE, I32_ATOMIC_LOAD8_U). Atomic support deferred to a later
+phase — after higher-priority items and the maven plugin for build-time use.
+
+**sqlite4j2** (all tests fail): All 2649 functions compile successfully (no
+missing opcodes), but execution hits `unreachable` trap during init
+(`WasmDBExports.<init>` line 112). This is a **code generation bug** — the
+compiled native code takes a wrong branch and hits an unreachable instruction.
+Needs investigation: identify which function traps, compare Cranelift output
+with interpreter behavior to find the divergence.
 
 **Factory reuse bug — FIXED**:
 - [x] `globalIndex` not reset between instances → IndexOutOfBoundsException
