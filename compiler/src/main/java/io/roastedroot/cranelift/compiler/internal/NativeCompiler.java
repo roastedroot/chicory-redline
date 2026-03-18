@@ -1513,55 +1513,75 @@ final class NativeCompiler {
             brArgs[i] = ctx.valueStack.pop();
         }
 
+        // Build jump table targets with edge splitting.
+        // Cranelift's br_table doesn't support block arguments, and FUNCTION
+        // targets need a return instead of a jump — so we create intermediate
+        // blocks for any target that needs special handling.
+        int[] intermediates = new int[defaultIdx];
+        boolean[] needsIntermediate = new boolean[defaultIdx];
         for (int i = 0; i < defaultIdx; i++) {
             int depth = (int) ins.operand(i);
             ControlFrame target = getControlFrame(controlStack, depth);
-            int brTarget = target.branchTarget();
+            if (argCount > 0 || target.kind == ControlFrame.Kind.FUNCTION) {
+                intermediates[i] = bridge.exports().createBlock();
+                needsIntermediate[i] = true;
+                bridge.exports().pushBrTableTarget(intermediates[i]);
+            } else {
+                bridge.exports().pushBrTableTarget(target.branchTarget());
+            }
+        }
+        boolean defaultNeedsIntermediate =
+                argCount > 0 || defaultTarget.kind == ControlFrame.Kind.FUNCTION;
+        int defaultJtTarget;
+        if (defaultNeedsIntermediate) {
+            defaultJtTarget = bridge.exports().createBlock();
+        } else {
+            defaultJtTarget = defaultTarget.branchTarget();
+        }
+        bridge.exports().emitBrTable(index, defaultJtTarget);
 
-            int cmpVal = bridge.exports().emitIconst32(i);
-            int cmp = bridge.exports().emitIcmp(0, index, cmpVal);
-
-            int hitBlock = bridge.exports().createBlock();
-            int nextBlock = bridge.exports().createBlock();
-            bridge.exports().emitBrif(cmp, hitBlock, nextBlock);
-
-            bridge.exports().switchToBlock(hitBlock);
+        // Emit intermediate blocks
+        for (int i = 0; i < defaultIdx; i++) {
+            if (!needsIntermediate[i]) {
+                continue;
+            }
+            bridge.exports().switchToBlock(intermediates[i]);
+            bridge.exports().sealBlock(intermediates[i]);
+            int depth = (int) ins.operand(i);
+            ControlFrame target = getControlFrame(controlStack, depth);
             if (target.kind == ControlFrame.Kind.FUNCTION) {
                 emitReturnWithArgs(ctx, brArgs, argCount);
+            } else if (argCount == 0) {
+                bridge.exports().emitJump(target.branchTarget());
             } else {
-                if (argCount == 0) {
-                    bridge.exports().emitJump(brTarget);
-                } else if (argCount == 1) {
-                    bridge.exports().emitJumpWithArg(brTarget, brArgs[0]);
-                } else {
-                    for (int a : brArgs) {
-                        bridge.exports().pushCallArg(a);
-                    }
-                    bridge.exports().emitJumpWithArgs(brTarget);
-                }
+                emitJumpWithArgs(target.branchTarget(), brArgs, argCount);
             }
-
-            bridge.exports().switchToBlock(nextBlock);
         }
 
-        // Default
-        int defTarget = defaultTarget.branchTarget();
-        if (defaultTarget.kind == ControlFrame.Kind.FUNCTION) {
-            emitReturnWithArgs(ctx, brArgs, argCount);
-        } else {
-            if (argCount == 0) {
-                bridge.exports().emitJump(defTarget);
-            } else if (argCount == 1) {
-                bridge.exports().emitJumpWithArg(defTarget, brArgs[0]);
+        if (defaultNeedsIntermediate) {
+            bridge.exports().switchToBlock(defaultJtTarget);
+            bridge.exports().sealBlock(defaultJtTarget);
+            if (defaultTarget.kind == ControlFrame.Kind.FUNCTION) {
+                emitReturnWithArgs(ctx, brArgs, argCount);
+            } else if (argCount == 0) {
+                bridge.exports().emitJump(defaultTarget.branchTarget());
             } else {
-                for (int a : brArgs) {
-                    bridge.exports().pushCallArg(a);
-                }
-                bridge.exports().emitJumpWithArgs(defTarget);
+                emitJumpWithArgs(defaultTarget.branchTarget(), brArgs, argCount);
             }
         }
 
         controlStack.peek().unreachable = true;
+    }
+
+    private void emitJumpWithArgs(int blockId, int[] args, int argCount) {
+        if (argCount == 1) {
+            bridge.exports().emitJumpWithArg(blockId, args[0]);
+        } else {
+            for (int a : args) {
+                bridge.exports().pushCallArg(a);
+            }
+            bridge.exports().emitJumpWithArgs(blockId);
+        }
     }
 
     private void emitReturn(EmitContext ctx, Deque<ControlFrame> controlStack) {
