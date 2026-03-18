@@ -262,6 +262,20 @@ final class NativeEmitters {
         ctx.valueStack.push(ctx.bridge.exports().emitI32WrapI64(ctx.valueStack.pop()));
     }
 
+    // --- Reload memBase after calls (callee may have done memory.grow) ---
+
+    private static void reloadMemBase(EmitContext ctx) {
+        int zero = ctx.bridge.exports().emitIconst32(0);
+        int newMemBase =
+                ctx.bridge
+                        .exports()
+                        .emitLoadI64(
+                                ctx.bridge.exports().useVar(ctx.ctxPtrVar),
+                                zero,
+                                CtxBuffer.MEM_BASE_ADDR);
+        ctx.bridge.exports().defVar(ctx.memBaseVar, newMemBase);
+    }
+
     // --- Memory bounds check ---
 
     private static final int[] LOAD_ACCESS_SIZE = {4, 8, 4, 8, 1, 1, 2, 2, 1, 1, 2, 2, 4, 4};
@@ -585,6 +599,9 @@ final class NativeEmitters {
         } else if (!targetType.returns().isEmpty()) {
             ctx.valueStack.push(rawResult);
         }
+
+        // Reload memBase — callee may have called memory.grow
+        reloadMemBase(ctx);
     }
 
     static void emitCallIndirect(EmitContext ctx, AnnotatedInstruction ins) {
@@ -695,6 +712,9 @@ final class NativeEmitters {
         } else if (!targetType.returns().isEmpty()) {
             ctx.valueStack.push(rawResult);
         }
+
+        // Reload memBase — callee may have called memory.grow
+        reloadMemBase(ctx);
     }
 
     // --- Table operations (fully native, no trampoline) ---
