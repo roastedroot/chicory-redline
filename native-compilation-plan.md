@@ -88,6 +88,8 @@ Key features:
 - Off-heap globals, tables, memory — no sync between Java and native
 - Resource cleanup: Cleaner (GC safety net) + AutoCloseable (deterministic)
 - Proper `wasm_malloc`/`wasm_free` for Wasm linear memory allocation (Rust global allocator)
+- memBase reload after calls — correctly handles memory.grow in callees
+- br_table via Cranelift native JumpTable (O(1) dispatch, edge splitting for args)
 
 ### Skipped tests (103 — error-path only)
 
@@ -108,38 +110,20 @@ All skipped tests are assert_trap or validation tests. Zero happy-path failures.
 
 ## Next priorities
 
-### P0: Benchmark correctness — shootout-heapsort, shootout-seqhash, shootout-switch
+### P0: Benchmark correctness — DONE
 
-Source: `/home/andreatp/workspace/wasm_benchmark`
+All three shootout benchmarks (heapsort, seqhash, switch) now work correctly.
+Tests added in `ShootoutTest.java`.
 
-**shootout-switch: 150x slower than wasmtime (7.8s vs 52ms)**
-
-Root cause: `br_table` is emitted as O(n) linear compare-and-branch chain.
-Both `NativeCompiler.emitBrTable()` (Java, line ~1516) and `emit_br_table()`
-(Rust, line ~966) iterate through every target emitting `iconst(i)` + `icmp` +
-`brif` for each case. shootout-switch has a br_table with **4,096 targets**,
-producing 4,096 sequential comparisons instead of an O(1) jump table.
-
-Fix: use Cranelift's native `br_table` instruction. The Rust `FunctionBuilder`
-supports `br_table(val, default, jt)` with a `JumpTable`. Need to:
-- [ ] Add a Rust export that creates a proper `JumpTable` and emits `br_table`
-- [ ] Update Java `emitBrTable()` to call the new Rust export instead of the
-      linear chain
-- [ ] Verify: shootout-switch should match wasmtime performance order-of-magnitude
-
-**shootout-heapsort: crashes (12KB, 14 functions)**
-**shootout-seqhash: crashes (37KB, 46 functions)**
-
-These produce no cranelift result — the benchmark runner deletes the output on
-failure. Likely one or more functions fail to compile silently (caught by
-`NativeCompiler.compileAll()` → `results[i] = null`), then crash at runtime
-with "Function X not compiled".
-
-To diagnose:
-- [ ] Run benchmarks with stderr visible to capture "Failed to compile function"
-      messages
-- [ ] Identify which functions fail and which opcodes/patterns cause the failure
-- [ ] Fix the compilation failures
+Fixed issues:
+- [x] **shootout-heapsort/seqhash crash**: After a native-to-native call, the
+      caller's `memBase` pointer became stale if the callee did `memory.grow`.
+      Fix: reload `memBaseVar` from `ctxBuffer` after every `call`/`call_indirect`.
+- [x] **shootout-switch 150x slow**: `br_table` emitted as O(n) linear
+      compare-and-branch chain (4096 comparisons for shootout-switch). Fix: use
+      Cranelift's native `JumpTable` + `br_table` instruction for O(1) dispatch.
+      Edge splitting for FUNCTION targets and branches with args, matching
+      wasmtime's approach.
 
 ### P1: Hybrid Machine — automatic threshold-based dispatch
 

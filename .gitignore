@@ -1,5 +1,7 @@
 .claude
 .idea
 target
+hs_err_pid*.log
+core.*
 
 /testsuite
