@@ -142,31 +142,35 @@ I32_ATOMIC_STORE, I32_ATOMIC_LOAD8_U). Atomic support deferred to a later
 phase — after higher-priority items and the maven plugin for build-time use.
 Make sure that if an instruction is not recognized the error is thrown at compile time and not runtime.
 
-**sqlite4j2** (all tests fail): All 2649 functions compile. `xFuncPtr`
-(funcId=2468) traps `unreachable` at runtime but ONLY when called with real
-sqlite4j2 host functions (not with stubs). With stubs (returning zeros),
-`_initialize` + `xFuncPtr` both pass. This means:
-- The unreachable is dead code after a loop — reached because of wrong data
-- Some earlier native function produces a wrong result that corrupts memory
-- xFuncPtr reads that corrupted state and takes the wrong branch
-- The root cause is NOT in xFuncPtr itself but upstream
-Next steps:
-- Add tracing to NativeMachine.call() to log funcId + args for each call
-  leading up to the trap (run from sqlite4j2, not cranelift4j)
-- Compare native vs interpreter results for the function that diverges
-- Alternatively: run sqlite4j2 with a hybrid approach — interpreter for
-  suspect functions, native for others — to bisect which function is wrong
+**sqlite4j2** (all tests fail): Data-dependent codegen bug. All 2649 functions
+compile. `xFuncPtr` traps `unreachable` only with real host functions — passes
+with stubs. Some upstream function produces a wrong result, corrupting memory.
+**Parked** — debugging requires many 6-minute compilation cycles to bisect
+across 2649 functions. Unblocked by P1 hybrid machine: once we can selectively
+run functions with interpreter vs native, bisecting becomes trivial.
 
 **Factory reuse bug — FIXED**:
 - [x] `globalIndex` not reset between instances → IndexOutOfBoundsException
 - [x] `nativeTables` not cleared between instances → stale table accumulation
 - Test: `FactoryReuseTest` covers both globals and tables reuse
 
-### P1: Hybrid Machine — automatic threshold-based dispatch
+### P1: Optimize Panama call() — invokeExact
+
+Current `call()` uses `invokeWithArguments` which boxes everything into
+`Object[]`. Replace with per-signature `invokeExact` using pre-bound
+`MethodHandle`s with exact types. This is the main bottleneck for small
+function calls (24x slower than JVM compiled for trivial calls).
+
+- [ ] Replace `invokeWithArguments` with `invokeExact` (pre-bound handles)
+- [ ] Eliminate `Object[]` allocation (typed parameters)
+- [ ] Cache ctxBuffer memBase writes (only update after memory.grow)
+
+### P2: Hybrid Machine — automatic threshold-based dispatch
 
 - [ ] Wire bytecode size threshold into `NativeMachineFactory` / `NativeCompiler`
 - [ ] Make threshold configurable (default 8000, matching `HugeMethodLimit`)
 - [ ] Benchmark: compare hybrid vs pure-Cranelift vs pure-JVM on real workloads
+- [ ] Use hybrid mode to bisect sqlite4j2 codegen bug
 
 ### P1: Fix address.wast OOB (28 tests)
 
