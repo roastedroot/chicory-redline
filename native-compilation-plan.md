@@ -142,16 +142,20 @@ I32_ATOMIC_STORE, I32_ATOMIC_LOAD8_U). Atomic support deferred to a later
 phase — after higher-priority items and the maven plugin for build-time use.
 Make sure that if an instruction is not recognized the error is thrown at compile time and not runtime.
 
-**sqlite4j2** (all tests fail): All 2649 functions compile, but `xFuncPtr`
-(funcId=2468, body 2410, 1806 bytes, 29 locals) traps `unreachable` at runtime.
-The unreachable at offset `0xae9e7` is dead code after a loop — the native code
-incorrectly reaches it. Individual patterns tested in isolation (loop+br_if,
-deep nesting, host function calls, f64 select+call) all pass. The bug is likely
-a subtle interaction in the deeply nested control flow (br depths up to 9) of
-this specific function. Next steps:
-- Extract the exact xFuncPtr bytecode into a standalone .wat reproducer
-- Binary search: compile only half the function's blocks to isolate which
-  branch/comparison produces the wrong result
+**sqlite4j2** (all tests fail): All 2649 functions compile. `xFuncPtr`
+(funcId=2468) traps `unreachable` at runtime but ONLY when called with real
+sqlite4j2 host functions (not with stubs). With stubs (returning zeros),
+`_initialize` + `xFuncPtr` both pass. This means:
+- The unreachable is dead code after a loop — reached because of wrong data
+- Some earlier native function produces a wrong result that corrupts memory
+- xFuncPtr reads that corrupted state and takes the wrong branch
+- The root cause is NOT in xFuncPtr itself but upstream
+Next steps:
+- Add tracing to NativeMachine.call() to log funcId + args for each call
+  leading up to the trap (run from sqlite4j2, not cranelift4j)
+- Compare native vs interpreter results for the function that diverges
+- Alternatively: run sqlite4j2 with a hybrid approach — interpreter for
+  suspect functions, native for others — to bisect which function is wrong
 
 **Factory reuse bug — FIXED**:
 - [x] `globalIndex` not reset between instances → IndexOutOfBoundsException
