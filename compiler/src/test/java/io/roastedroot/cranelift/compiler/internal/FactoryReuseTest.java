@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.wabt.Wat2Wasm;
 import com.dylibso.chicory.wasm.Parser;
+import io.roastedroot.cranelift.compiler.NativeMachineFactory;
 import org.junit.jupiter.api.Test;
 
 public class FactoryReuseTest {
@@ -29,7 +30,7 @@ public class FactoryReuseTest {
                             .withMachineFactory(factory::compile)
                             .withTableFactory(factory::createTable)
                             .withGlobalFactory(factory::createGlobal)
-                            .withMemoryFactory(NativeMemory::new)
+                            .withMemoryFactory(NativeMachineFactory::createMemory)
                             .build();
 
             // Each instance should start fresh — global starts at 0
@@ -64,7 +65,7 @@ public class FactoryReuseTest {
                             .withMachineFactory(factory::compile)
                             .withTableFactory(factory::createTable)
                             .withGlobalFactory(factory::createGlobal)
-                            .withMemoryFactory(NativeMemory::new)
+                            .withMemoryFactory(NativeMachineFactory::createMemory)
                             .build();
 
             var callTable = instance.export("call_table");

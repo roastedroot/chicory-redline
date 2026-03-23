@@ -35,14 +35,14 @@ import java.lang.foreign.ValueLayout;
  * passed to {@link #setRef}, obtaining the calling module's NativeMachine.
  * This ensures cross-module shared tables resolve to the correct native addresses.
  */
-final class NativeTable extends TableInstance {
+public final class NativeTable extends TableInstance {
 
     private static final int MAX_PREALLOC = 1_000_000;
 
     private final MemorySegment buffer;
     private final int capacity;
 
-    NativeTable(Table table, Arena arena) {
+    public NativeTable(Table table, Arena arena) {
         super(table, REF_NULL_VALUE);
         int initial = (int) table.limits().min();
         int max = (int) table.limits().max();

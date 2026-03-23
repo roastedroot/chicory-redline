@@ -32,7 +32,7 @@ import java.util.ArrayList;
  *
  * <p>See {@link CtxBuffer} for the full layout definition.
  */
-final class NativeMachine implements Machine {
+public final class NativeMachine implements Machine {
 
     private static final int CTX_SIZE = CtxBuffer.CTX_SIZE;
     private static final Cleaner CLEANER = Cleaner.create();
@@ -92,7 +92,7 @@ final class NativeMachine implements Machine {
     // Pending exception from upcall stubs (cannot throw through native frames)
     private volatile Throwable pendingException;
 
-    NativeMachine(
+    public NativeMachine(
             Instance instance,
             Arena arena,
             java.util.List<NativeTable> sharedTables,
@@ -261,7 +261,7 @@ final class NativeMachine implements Machine {
     }
 
     /** Explicitly release all native resources (arena + code region). Idempotent. */
-    void close() {
+    public void close() {
         cleanable.clean();
     }
 

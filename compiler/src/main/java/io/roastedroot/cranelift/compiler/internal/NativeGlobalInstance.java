@@ -11,12 +11,12 @@ import java.lang.foreign.ValueLayout;
  * GlobalInstance backed by an off-heap MemorySegment buffer.
  * Native code and Java code read/write the same memory — no sync needed.
  */
-final class NativeGlobalInstance extends GlobalInstance {
+public final class NativeGlobalInstance extends GlobalInstance {
 
     private final MemorySegment buffer;
     private final long offset;
 
-    NativeGlobalInstance(
+    public NativeGlobalInstance(
             MemorySegment buffer,
             int index,
             long initialValue,

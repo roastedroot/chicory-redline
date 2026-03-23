@@ -1,13 +1,19 @@
-package io.roastedroot.cranelift.compiler.internal;
+package io.roastedroot.cranelift.compiler;
 
 import com.dylibso.chicory.runtime.GlobalInstance;
 import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.runtime.Machine;
+import com.dylibso.chicory.runtime.Memory;
 import com.dylibso.chicory.runtime.TableInstance;
 import com.dylibso.chicory.wasm.WasmModule;
+import com.dylibso.chicory.wasm.types.MemoryLimits;
 import com.dylibso.chicory.wasm.types.MutabilityType;
 import com.dylibso.chicory.wasm.types.Table;
 import com.dylibso.chicory.wasm.types.ValType;
+import io.roastedroot.cranelift.compiler.internal.NativeGlobalInstance;
+import io.roastedroot.cranelift.compiler.internal.NativeMachine;
+import io.roastedroot.cranelift.compiler.internal.NativeMemory;
+import io.roastedroot.cranelift.compiler.internal.NativeTable;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -23,7 +29,7 @@ import java.util.List;
  *     .withMachineFactory(factory::compile)
  *     .withTableFactory(factory::createTable)
  *     .withGlobalFactory(factory::createGlobal)
- *     .withMemoryFactory(NativeMemory::new)
+ *     .withMemoryFactory(NativeMachineFactory::createMemory)
  *     .build();
  * </pre>
  *
@@ -72,6 +78,10 @@ public final class NativeMachineFactory implements AutoCloseable {
         var global =
                 new NativeGlobalInstance(globalsBuffer, globalIndex++, value, type, mutability);
         return global;
+    }
+
+    public static Memory createMemory(MemoryLimits limits) {
+        return new NativeMemory(limits);
     }
 
     public Machine compile(Instance instance) {
