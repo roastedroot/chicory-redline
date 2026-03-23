@@ -154,15 +154,22 @@ run functions with interpreter vs native, bisecting becomes trivial.
 - [x] `nativeTables` not cleared between instances → stale table accumulation
 - Test: `FactoryReuseTest` covers both globals and tables reuse
 
-### P1: Optimize Panama call() — invokeExact
+### P1: Optimize Panama call() — invokeExact — DONE
 
-Current `call()` uses `invokeWithArguments` which boxes everything into
-`Object[]`. Replace with per-signature `invokeExact` using pre-bound
-`MethodHandle`s with exact types. This is the main bottleneck for small
-function calls (24x slower than JVM compiled for trivial calls).
+Replaced `invokeWithArguments` + `Object[]` boxing with `invokeExact` using
+pre-adapted `MethodHandle`s. Each downcall handle is adapted at construction
+time to a uniform `(MemorySegment, MemorySegment, long[]) → long` type via:
+- `filterArguments` for float/double bit-reinterpretation (Value.longToFloat etc.)
+- `filterReturnValue` for float/double returns
+- `foldArguments` for void→long return adaptation
+- `explicitCastArguments` for int↔long narrowing/widening
+- `asSpreader` to accept the caller's `long[]` directly
 
-- [ ] Replace `invokeWithArguments` with `invokeExact` (pre-bound handles)
-- [ ] Eliminate `Object[]` allocation (typed parameters)
+Also switched PanamaExecutor (mmap/mprotect/munmap) from `invoke()` to
+`invokeExact()`.
+
+- [x] Replace `invokeWithArguments` with `invokeExact` (pre-bound handles)
+- [x] Eliminate `Object[]` allocation (typed parameters)
 - [ ] Cache ctxBuffer memBase writes (only update after memory.grow)
 
 ### P2: Hybrid Machine — automatic threshold-based dispatch
@@ -194,13 +201,13 @@ Current float-to-int trunc only checks NaN (fcmp NE x,x). Need range check:
 - [ ] Add null guard in `b()` for clear error if builder is used after `compile()`
 - [ ] Pin `interpretedFunctions` in `bridge/pom.xml` (currently `interpreterFallback=WARN`)
 
-### P1: Optimize Panama call() overhead
+### P1: Optimize Panama call() overhead — DONE
 
-For trivial calls (input=5), native is 24x slower than JVM compiled due to
-Panama `invokeWithArguments` + `Object[]` allocation on every `call()`.
+Replaced `invokeWithArguments` + `Object[]` with `invokeExact` + adapted
+handles. See "P1: Optimize Panama call() — invokeExact" section above.
 
-- [ ] Replace `invokeWithArguments` with per-signature `invokeExact` (pre-bound handles)
-- [ ] Eliminate `Object[]` allocation (typed parameters)
+- [x] Replace `invokeWithArguments` with per-signature `invokeExact` (pre-bound handles)
+- [x] Eliminate `Object[]` allocation (typed parameters)
 - [ ] Cache ctxBuffer memBase writes (only update after memory.grow)
 
 Benchmark results (iterFact, input=1000):

@@ -63,7 +63,7 @@ final class PanamaExecutor {
     static MemorySegment mmapCode(long size) throws Throwable {
         MemorySegment addr =
                 (MemorySegment)
-                        MMAP.invoke(
+                        MMAP.invokeExact(
                                 MemorySegment.NULL,
                                 size,
                                 PROT_READ | PROT_WRITE,
@@ -75,7 +75,7 @@ final class PanamaExecutor {
 
     /** Make a previously mmapped region executable (and remove write). */
     static void mprotectExec(MemorySegment addr, long size) throws Throwable {
-        int result = (int) MPROTECT.invoke(addr, size, PROT_READ | PROT_EXEC);
+        int result = (int) MPROTECT.invokeExact(addr, size, PROT_READ | PROT_EXEC);
         if (result != 0) {
             throw new RuntimeException("mprotect failed: " + result);
         }
@@ -83,6 +83,9 @@ final class PanamaExecutor {
 
     /** Unmap a memory region. */
     static void munmap(MemorySegment addr, long size) throws Throwable {
-        MUNMAP.invoke(addr, size);
+        int result = (int) MUNMAP.invokeExact(addr, size);
+        if (result != 0) {
+            throw new RuntimeException("munmap failed: " + result);
+        }
     }
 }

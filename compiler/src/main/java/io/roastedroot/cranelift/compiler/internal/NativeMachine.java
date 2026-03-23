@@ -37,6 +37,41 @@ final class NativeMachine implements Machine {
     private static final int CTX_SIZE = CtxBuffer.CTX_SIZE;
     private static final Cleaner CLEANER = Cleaner.create();
 
+    // Conversion handles for adapting downcalls to uniform (MS, MS, long[]) → long.
+    // These use Wasm bit-reinterpretation (not numeric casts).
+    private static final MethodHandle LONG_TO_FLOAT;
+    private static final MethodHandle LONG_TO_DOUBLE;
+    private static final MethodHandle FLOAT_TO_LONG;
+    private static final MethodHandle DOUBLE_TO_LONG;
+
+    static {
+        try {
+            var lookup = MethodHandles.lookup();
+            LONG_TO_FLOAT =
+                    lookup.findStatic(
+                            Value.class,
+                            "longToFloat",
+                            MethodType.methodType(float.class, long.class));
+            LONG_TO_DOUBLE =
+                    lookup.findStatic(
+                            Value.class,
+                            "longToDouble",
+                            MethodType.methodType(double.class, long.class));
+            FLOAT_TO_LONG =
+                    lookup.findStatic(
+                            Value.class,
+                            "floatToLong",
+                            MethodType.methodType(long.class, float.class));
+            DOUBLE_TO_LONG =
+                    lookup.findStatic(
+                            Value.class,
+                            "doubleToLong",
+                            MethodType.methodType(long.class, double.class));
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
     private final Arena arena;
     private final Instance instance;
     private final MethodHandle[] downcalls;
@@ -279,7 +314,67 @@ final class NativeMachine implements Machine {
             desc = FunctionDescriptor.ofVoid(layouts.toArray(new ValueLayout[0]));
         }
 
-        return Linker.nativeLinker().downcallHandle(codePtr, desc);
+        MethodHandle handle = Linker.nativeLinker().downcallHandle(codePtr, desc);
+        return adaptHandle(handle, funcType);
+    }
+
+    /**
+     * Adapt a native downcall handle to a uniform type:
+     * {@code (MemorySegment memBase, MemorySegment ctxPtr, long[] wasmArgs) -> long}.
+     *
+     * <p>This eliminates Object[] boxing and enables invokeExact at the call site.
+     * Float/double conversions use Wasm bit-reinterpretation (not numeric casts).
+     */
+    private static MethodHandle adaptHandle(MethodHandle handle, FunctionType funcType) {
+        int paramCount = funcType.params().size();
+
+        // Step 1: Adapt return type to long
+        if (handle.type().returnType() == void.class) {
+            // Void → long: call void handle for side effects, return 0L
+            MethodHandle zero =
+                    MethodHandles.dropArguments(
+                            MethodHandles.constant(long.class, 0L),
+                            0,
+                            handle.type().parameterList());
+            handle = MethodHandles.foldArguments(zero, handle);
+        } else if (!funcType.returns().isEmpty() && funcType.returns().size() == 1) {
+            ValType retType = funcType.returns().get(0);
+            if (retType.equals(ValType.F32)) {
+                handle = MethodHandles.filterReturnValue(handle, FLOAT_TO_LONG);
+            } else if (retType.equals(ValType.F64)) {
+                handle = MethodHandles.filterReturnValue(handle, DOUBLE_TO_LONG);
+            }
+            // I32 → long widening and I64 identity handled by asType below
+        }
+        // Multi-return: native returns long dummy, no conversion needed
+
+        // Step 2: Filter float/double params (bit-reinterpret long → float/double)
+        for (int i = 0; i < paramCount; i++) {
+            ValType paramType = funcType.params().get(i);
+            if (paramType.equals(ValType.F32)) {
+                handle = MethodHandles.filterArguments(handle, i + 2, LONG_TO_FLOAT);
+            } else if (paramType.equals(ValType.F64)) {
+                handle = MethodHandles.filterArguments(handle, i + 2, LONG_TO_DOUBLE);
+            }
+        }
+
+        // Step 3: Normalize remaining params to long and return to long.
+        // explicitCastArguments handles long→int narrowing (asType only does widening).
+        var targetParams = new Class<?>[2 + paramCount];
+        targetParams[0] = MemorySegment.class;
+        targetParams[1] = MemorySegment.class;
+        for (int i = 0; i < paramCount; i++) {
+            targetParams[i + 2] = long.class;
+        }
+        handle =
+                MethodHandles.explicitCastArguments(
+                        handle, MethodType.methodType(long.class, targetParams));
+
+        // Step 4: Spread wasm params from long[]
+        handle = handle.asSpreader(long[].class, paramCount);
+        // Final type: (MemorySegment, MemorySegment, long[]) → long
+
+        return handle;
     }
 
     // --- Import upcall stubs (native → Java for host imports) ---
@@ -788,53 +883,25 @@ final class NativeMachine implements Machine {
         try {
             var funcType = (FunctionType) instance.type(instance.functionType(funcId));
 
-            // Copy imported global values into shared buffer (once)
             initializeImportGlobals();
-
-            // Collect NativeTable refs from Instance and build pointer array (once)
             initializeNativeTables();
 
+            MemorySegment memBase;
             var mem = instance.memory();
             if (mem instanceof NativeMemory nativeMemory) {
-                ctxBuffer.set(
-                        ValueLayout.JAVA_LONG,
-                        CtxBuffer.MEM_BASE_ADDR,
-                        nativeMemory.nativeAddress().address());
+                memBase = nativeMemory.nativeAddress();
+                ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.MEM_BASE_ADDR, memBase.address());
                 ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.MEMORY_PAGES, mem.pages());
-            }
-
-            // Build arguments: memBase + ctxPtr + wasm params
-            var callArgs = new Object[2 + args.length];
-            if (mem instanceof NativeMemory nativeMemory) {
-                callArgs[0] = nativeMemory.nativeAddress();
             } else {
-                // No native memory — pass NULL (functions not accessing memory will work)
-                callArgs[0] = MemorySegment.NULL;
-            }
-            callArgs[1] = ctxBuffer;
-
-            for (int i = 0; i < args.length; i++) {
-                var paramType = funcType.params().get(i);
-                if (paramType.equals(ValType.I32)) {
-                    callArgs[i + 2] = (int) args[i];
-                } else if (paramType.equals(ValType.I64)) {
-                    callArgs[i + 2] = args[i];
-                } else if (paramType.equals(ValType.F32)) {
-                    callArgs[i + 2] = Value.longToFloat(args[i]);
-                } else if (paramType.equals(ValType.F64)) {
-                    callArgs[i + 2] = Value.longToDouble(args[i]);
-                } else {
-                    // Reference types and others: treat as i64
-                    callArgs[i + 2] = args[i];
-                }
+                memBase = MemorySegment.NULL;
             }
 
-            Object result = handle.invokeWithArguments(callArgs);
+            long result = (long) handle.invokeExact(memBase, ctxBuffer, args);
 
             // Check for traps (pre-checks write trap code to ctxBuffer)
             int trapCode = ctxBuffer.get(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE);
             if (trapCode != 0) {
-                ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE, 0); // reset
+                ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE, 0);
                 throw trapException(trapCode);
             }
 
@@ -865,19 +932,7 @@ final class NativeMachine implements Machine {
                 return results;
             }
 
-            // Single return: read from register (fast path)
-            var returnType = funcType.returns().get(0);
-            if (returnType.equals(ValType.I32)) {
-                return new long[] {((Integer) result).longValue()};
-            } else if (returnType.equals(ValType.I64)) {
-                return new long[] {(Long) result};
-            } else if (returnType.equals(ValType.F32)) {
-                return new long[] {Value.floatToLong((Float) result)};
-            } else if (returnType.equals(ValType.F64)) {
-                return new long[] {Value.doubleToLong((Double) result)};
-            } else {
-                return new long[] {(Long) result};
-            }
+            return new long[] {result};
         } catch (ChicoryException e) {
             throw e;
         } catch (Throwable e) {
