@@ -1,5 +1,6 @@
 package io.roastedroot.cranelift.compiler.internal;
 
+import com.dylibso.chicory.wasm.ChicoryException;
 import com.dylibso.chicory.wasm.WasmModule;
 import com.dylibso.chicory.wasm.types.AnnotatedInstruction;
 import com.dylibso.chicory.wasm.types.ExternalType;
@@ -128,8 +129,8 @@ final class NativeCompiler {
             try {
                 results[i] = compileFunction(i);
             } catch (RuntimeException e) {
-                System.err.println("Failed to compile function " + i + ": " + e.getMessage());
-                results[i] = null;
+                throw new ChicoryException(
+                        "Failed to compile function " + i + ": " + e.getMessage(), e);
             }
         }
         return results;

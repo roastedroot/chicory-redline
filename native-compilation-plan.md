@@ -72,7 +72,7 @@ cranelift_bridge.wasm                   Pre-built Wasm binary (~5MB, root level)
 
 ## Current state
 
-**28020 tests, 0 failures, 0 errors, 103 skipped**. Requires Java 25.
+**28022 tests, 0 failures, 0 errors, 103 skipped**. Requires Java 25.
 Platform: **x86_64 Linux only** (target triple hardcoded in NativeMachine).
 
 Public API (`io.roastedroot.cranelift.compiler.NativeMachineFactory`):
@@ -122,10 +122,21 @@ Native:        911,764 ops/s  (144x)   <- within 9% of JVM compiled
 
 ## Next priorities
 
+### P1: Maven plugin & easy integration
+
+Before hybrid machine or further features, Cranelift4J needs to be easy to
+integrate into user projects. Currently users must wire NativeMachineFactory
+manually. A Maven plugin (like Chicory's `chicory-compiler-maven-plugin`)
+would enable build-time compilation and simple dependency-based integration.
+
+- [ ] Maven plugin for build-time Cranelift compilation
+- [ ] Documentation / quickstart for user projects
+- [ ] Publish to Maven Central (or snapshot repo)
+
 ### P1: Hybrid Machine — automatic threshold-based dispatch
 
 The key enabler for real-world use. Without it:
-- Unsupported opcodes (atomics) crash the whole module instead of falling back
+- Unsupported opcodes (atomics) fail the whole module at instantiation time
 - Compilation time is prohibitive for large modules (compiles everything)
 - Can't bisect the sqlite4j2 codegen bug
 
@@ -176,6 +187,10 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
 - **Public API**: moved `NativeMachineFactory` to `io.roastedroot.cranelift.compiler`,
   added `createMemory()` static method
 - **Rust bridge**: avoided cloning `Function` in `compile()` via `std::mem::replace`
+- **Compile-time failure**: unsupported opcodes now throw `ChicoryException` at
+  instantiation time instead of silently producing stubs that fail at runtime.
+  Test: `UnsupportedOpcodeTest`
+- **wasm-tools**: replaced `wabt` test dependency with Chicory's `wasm-tools`
 
 ## How to build and test
 

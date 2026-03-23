@@ -3,7 +3,7 @@ package io.roastedroot.cranelift.compiler.internal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.dylibso.chicory.testing.NativeInstanceBuilder;
-import com.dylibso.chicory.wabt.Wat2Wasm;
+import com.dylibso.chicory.tools.wasm.Wat2Wasm;
 import com.dylibso.chicory.wasm.Parser;
 import org.junit.jupiter.api.Test;
 

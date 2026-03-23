@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.dylibso.chicory.runtime.ImportFunction;
 import com.dylibso.chicory.runtime.ImportValues;
 import com.dylibso.chicory.testing.NativeInstanceBuilder;
-import com.dylibso.chicory.wabt.Wat2Wasm;
+import com.dylibso.chicory.tools.wasm.Wat2Wasm;
 import com.dylibso.chicory.wasm.ChicoryException;
 import com.dylibso.chicory.wasm.Parser;
 import com.dylibso.chicory.wasm.types.FunctionType;

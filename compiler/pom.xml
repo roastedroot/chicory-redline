@@ -30,13 +30,13 @@
     </dependency>
     <dependency>
       <groupId>com.dylibso.chicory</groupId>
-      <artifactId>wabt</artifactId>
+      <artifactId>wasm-corpus</artifactId>
+      <version>${chicory.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>com.dylibso.chicory</groupId>
-      <artifactId>wasm-corpus</artifactId>
-      <version>${chicory.version}</version>
+      <artifactId>wasm-tools</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
