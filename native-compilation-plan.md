@@ -49,8 +49,9 @@ bridge/                                 Java bridge module
 
 compiler/                               Native compiler + spec tests
 ├── pom.xml
+├── src/main/java/.../compiler/
+│   └── NativeMachineFactory.java       Public API (AutoCloseable, shared Arena)
 ├── src/main/java/.../compiler/internal/
-│   ├── NativeMachineFactory.java       Public API (AutoCloseable, shared Arena)
 │   ├── NativeMachine.java              Machine impl with Panama downcalls + Cleaner
 │   ├── NativeCompiler.java             Thin orchestrator (analyzer -> emitters)
 │   ├── NativeAnalyzer.java             Pre-pass: reachability via exitBlockDepth
@@ -71,25 +72,19 @@ cranelift_bridge.wasm                   Pre-built Wasm binary (~5MB, root level)
 
 ## Current state
 
-**28015 tests, 0 failures, 0 errors, 103 skipped**. Requires Java 25.
+**28020 tests, 0 failures, 0 errors, 103 skipped**. Requires Java 25.
+Platform: **x86_64 Linux only** (target triple hardcoded in NativeMachine).
 
-Key features:
-- All i32/i64/f32/f64 arithmetic/comparison/conversion opcodes (~120 total)
-- Full control flow: block, loop, if/else, br, br_if, br_table, return
-- Memory load/store with all widths + OOB bounds checking
-- Direct calls (native-to-native via funcTable) + import upcall stubs
-- CALL_INDIRECT: funcPtr+typeIdx loaded directly from 16-byte table entry
-- Multi-return via argsBuffer (single-return fast path in register)
-- NativeTable: 16-byte anyfunc entries with cross-module resolution
-- Bulk memory: memory.copy, memory.fill, memory.init, data.drop
-- Table ops: GET/SET/SIZE/GROW/FILL/COPY/INIT, ELEM.DROP
-- Trap pre-checks: div-by-zero, INT_MIN/-1, unreachable, float trunc NaN
-- Stack depth guard via get_stack_pointer (512KB reserve)
-- Off-heap globals, tables, memory — no sync between Java and native
-- Resource cleanup: Cleaner (GC safety net) + AutoCloseable (deterministic)
-- Proper `wasm_malloc`/`wasm_free` for Wasm linear memory allocation (Rust global allocator)
-- memBase reload after calls — correctly handles memory.grow in callees
-- br_table via Cranelift native JumpTable (O(1) dispatch, edge splitting for args)
+Public API (`io.roastedroot.cranelift.compiler.NativeMachineFactory`):
+```java
+var factory = new NativeMachineFactory(module);
+Instance.builder(module)
+    .withMachineFactory(factory::compile)
+    .withTableFactory(factory::createTable)
+    .withGlobalFactory(factory::createGlobal)
+    .withMemoryFactory(NativeMachineFactory::createMemory)
+    .build();
+```
 
 ### Skipped tests (103 — error-path only)
 
@@ -108,124 +103,79 @@ All skipped tests are assert_trap or validation tests. Zero happy-path failures.
 | data.wast | 2 | InvalidException not thrown |
 | start.wast | 1 | UninstantiableException vs ChicoryException |
 
-## Next priorities
-
-### P0: Benchmark correctness — DONE
-
-All three shootout benchmarks (heapsort, seqhash, switch) now work correctly.
-Tests added in `ShootoutTest.java`.
-
-Fixed issues:
-- [x] **shootout-heapsort/seqhash crash**: After a native-to-native call, the
-      caller's `memBase` pointer became stale if the callee did `memory.grow`.
-      Fix: reload `memBaseVar` from `ctxBuffer` after every `call`/`call_indirect`.
-- [x] **shootout-switch 150x slow**: `br_table` emitted as O(n) linear
-      compare-and-branch chain (4096 comparisons for shootout-switch). Fix: use
-      Cranelift's native `JumpTable` + `br_table` instruction for O(1) dispatch.
-      Edge splitting for FUNCTION targets and branches with args, matching
-      wasmtime's approach.
-
-### P0: Real-world project validation
-
-Testing Cranelift4J against real projects to find correctness issues.
+### Real-world validation
 
 | Project | Wasm size | Status | Notes |
 |---|---|---|---|
-| shootout benchmarks | ~12-37KB | PASS | Fixed: memBase reload, br_table jump table |
-| bazel-wasm-repro (toml2json) | 237KB | PASS | 279 funcs, 585ms execution, ~80s compilation |
-| jq4j | 951KB | FAIL (9/21) | Some functions fail to compile → `unreachable` at init |
-| sqlite4j2 | 849KB | FAIL | All 2649 funcs compile, runtime `unreachable` trap |
+| shootout benchmarks | ~12-37KB | PASS | All 3 benchmarks correct |
+| bazel-wasm-repro (toml2json) | 237KB | PASS | 279 funcs, ~80s compilation |
+| jq4j | 951KB | FAIL (9/21) | 24 funcs missing atomic opcodes |
+| sqlite4j2 | 849KB | FAIL | Data-dependent codegen bug, parked until hybrid machine |
 
-**jq4j** (9 test errors): 24 functions fail to compile due to missing **atomic
-opcodes** (I32_ATOMIC_RMW_CMPXCHG, I32_ATOMIC_RMW_XCHG, MEM_ATOMIC_WAIT32,
-I32_ATOMIC_STORE, I32_ATOMIC_LOAD8_U). Atomic support deferred to a later
-phase — after higher-priority items and the maven plugin for build-time use.
-Make sure that if an instruction is not recognized the error is thrown at compile time and not runtime.
+### Benchmark results (iterFact, input=1000)
 
-**sqlite4j2** (all tests fail): Data-dependent codegen bug. All 2649 functions
-compile. `xFuncPtr` traps `unreachable` only with real host functions — passes
-with stubs. Some upstream function produces a wrong result, corrupting memory.
-**Parked** — debugging requires many 6-minute compilation cycles to bisect
-across 2649 functions. Unblocked by P1 hybrid machine: once we can selectively
-run functions with interpreter vs native, bisecting becomes trivial.
-
-**Factory reuse bug — FIXED**:
-- [x] `globalIndex` not reset between instances → IndexOutOfBoundsException
-- [x] `nativeTables` not cleared between instances → stale table accumulation
-- Test: `FactoryReuseTest` covers both globals and tables reuse
-
-### P1: Optimize Panama call() — invokeExact — DONE
-
-Replaced `invokeWithArguments` + `Object[]` boxing with `invokeExact` using
-pre-adapted `MethodHandle`s. Each downcall handle is adapted at construction
-time to a uniform `(MemorySegment, MemorySegment, long[]) → long` type via:
-- `filterArguments` for float/double bit-reinterpretation (Value.longToFloat etc.)
-- `filterReturnValue` for float/double returns
-- `foldArguments` for void→long return adaptation
-- `explicitCastArguments` for int↔long narrowing/widening
-- `asSpreader` to accept the caller's `long[]` directly
-
-Also switched PanamaExecutor (mmap/mprotect/munmap) from `invoke()` to
-`invokeExact()`.
-
-- [x] Replace `invokeWithArguments` with `invokeExact` (pre-bound handles)
-- [x] Eliminate `Object[]` allocation (typed parameters)
-- [ ] Cache ctxBuffer memBase writes (only update after memory.grow)
-
-### P2: Hybrid Machine — automatic threshold-based dispatch
-
-- [ ] Wire bytecode size threshold into `NativeMachineFactory` / `NativeCompiler`
-- [ ] Make threshold configurable (default 8000, matching `HugeMethodLimit`)
-- [ ] Benchmark: compare hybrid vs pure-Cranelift vs pure-JVM on real workloads
-- [ ] Use hybrid mode to bisect sqlite4j2 codegen bug
-
-### P1: Fix address.wast OOB (28 tests)
-
-Bounds check uses `addr + offset + accessSize > memPages * 65536` with i32 addr.
-When static offset is large (e.g. 65536), `addr + offset` overflows i32. Fix:
-use i64 for the bounds computation, or split into `offset + accessSize > memSize`
-and `addr > memSize - offset - accessSize`.
-
-### P1: Fix conversions.wast trunc overflow (35 tests)
-
-Current float-to-int trunc only checks NaN (fcmp NE x,x). Need range check:
-`x < INT_MIN_as_float || x > INT_MAX_as_float -> trap`. Each trunc variant
-(i32/i64 x f32/f64 x signed/unsigned) has different range bounds.
-
-### P1: Rust bridge cleanup
-
-- [ ] Guard `wasm_malloc(0)` — `std::alloc::alloc` with zero-sized layout is UB
-- [x] Avoid cloning `Function` in `compile()` — uses `std::mem::replace` to take
-      ownership instead of deep-copying the IR
-- [ ] Clear `Session` vecs after `compile()` to free memory between compilations
-- [ ] Add null guard in `b()` for clear error if builder is used after `compile()`
-- [ ] Pin `interpretedFunctions` in `bridge/pom.xml` (currently `interpreterFallback=WARN`)
-
-### P1: Optimize Panama call() overhead — DONE
-
-Replaced `invokeWithArguments` + `Object[]` with `invokeExact` + adapted
-handles. See "P1: Optimize Panama call() — invokeExact" section above.
-
-- [x] Replace `invokeWithArguments` with per-signature `invokeExact` (pre-bound handles)
-- [x] Eliminate `Object[]` allocation (typed parameters)
-- [ ] Cache ctxBuffer memBase writes (only update after memory.grow)
-
-Benchmark results (iterFact, input=1000):
 ```
 Interpreter:   6,314 ops/s    (1x)
 JVM compiled:  996,429 ops/s  (158x)
 Native:        911,764 ops/s  (144x)   <- within 9% of JVM compiled
 ```
 
+## Next priorities
+
+### P1: Hybrid Machine — automatic threshold-based dispatch
+
+The key enabler for real-world use. Without it:
+- Unsupported opcodes (atomics) crash the whole module instead of falling back
+- Compilation time is prohibitive for large modules (compiles everything)
+- Can't bisect the sqlite4j2 codegen bug
+
+Tasks:
+- [ ] Wire bytecode size threshold into `NativeMachineFactory` / `NativeCompiler`
+- [ ] Make threshold configurable (default 8000, matching `HugeMethodLimit`)
+- [ ] Functions below threshold → Chicory AOT (JVM bytecode)
+- [ ] Functions above threshold → Cranelift (native)
+- [ ] Functions with unsupported opcodes → fall back to Chicory AOT
+- [ ] Use hybrid mode to bisect sqlite4j2 codegen bug
+
+### P1: Rust bridge cleanup
+
+- [ ] Guard `wasm_malloc(0)` — `std::alloc::alloc` with zero-sized layout is UB
+- [ ] Clear `Session` vecs after `compile()` to free memory between compilations
+- [ ] Add null guard in `b()` for clear error if builder is used after `compile()`
+- [ ] Pin `interpretedFunctions` in `bridge/pom.xml` (currently `interpreterFallback=WARN`)
+
+### P2: Cache ctxBuffer memBase writes
+
+Currently memBase and pages are written to ctxBuffer on every `call()`.
+Only update after `memory.grow` — saves two off-heap writes per call.
+
+### P2: Fix address.wast OOB (28 skipped tests)
+
+Bounds check uses `addr + offset + accessSize > memPages * 65536` with i32 addr.
+When static offset is large (e.g. 65536), `addr + offset` overflows i32. Fix:
+use i64 for the bounds computation.
+
+### P2: Fix conversions.wast trunc overflow (35 skipped tests)
+
+Current float-to-int trunc only checks NaN (fcmp NE x,x). Need range check:
+`x < INT_MIN_as_float || x > INT_MAX_as_float -> trap`. Each trunc variant
+(i32/i64 x f32/f64 x signed/unsigned) has different range bounds.
+
 ### P2: Native memory.copy/fill (optimization)
 
 Current memory.copy/fill go through Java trampoline (native -> upcall -> Java).
 Emit as native `memmove`/`memset` with inline OOB checks — no trampoline needed.
 
-### P2: Real workload validation
+## Completed
 
-- [ ] bazel-wasm-repro toml2json: works correctly after memBase/br_table fixes, compilation slow (~80s)
-- [ ] SQLite (~3MB, 600+ functions): not yet tested
+- **Benchmark correctness**: memBase reload after calls, br_table via JumpTable
+- **Factory reuse**: globalIndex reset, nativeTables clear between instances
+- **invokeExact**: replaced `invokeWithArguments` + `Object[]` boxing with
+  pre-adapted `MethodHandle`s and `invokeExact`. Also switched PanamaExecutor
+  (mmap/mprotect/munmap) to `invokeExact`.
+- **Public API**: moved `NativeMachineFactory` to `io.roastedroot.cranelift.compiler`,
+  added `createMemory()` static method
+- **Rust bridge**: avoided cloning `Function` in `compile()` via `std::mem::replace`
 
 ## How to build and test
 
