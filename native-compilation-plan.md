@@ -138,15 +138,34 @@ Maven plugin and build-time compiler now work on any JDK >= 11.
 - [ ] Maven plugin for build-time Cranelift compilation (scaffolding done)
 - [ ] Documentation / quickstart for user projects
 
-### P1: Cross-compilation for all targets
+### P0: Cross-compilation for all targets
 
-After the module split, the compiler module (Java 11) can cross-compile
-for any target architecture. The target triple becomes a parameter.
+**Next priority.** The compiler must produce native code for all platforms by default
+so that JARs work everywhere. Currently hardcoded to `x86_64-unknown-linux-gnu`.
 
-- [ ] Make target triple a parameter in NativeCompiler (currently hardcoded x86_64)
-- [ ] Compile for multiple targets at build time (x86_64-linux, aarch64-linux, x86_64-darwin, aarch64-darwin)
-- [ ] Runtime target detection: load correct `.native` resource for current platform
-- [ ] Name resources per target: `Module.x86_64-linux.native`, etc.
+Default targets (compile all unless user restricts):
+- `x86_64-unknown-linux-gnu` (Linux x86_64)
+- `aarch64-unknown-linux-gnu` (Linux ARM64)
+- `x86_64-apple-darwin` (macOS x86_64)
+- `aarch64-apple-darwin` (macOS ARM64 / Apple Silicon)
+- `x86_64-pc-windows-msvc` (Windows x86_64)
+- `aarch64-pc-windows-msvc` (Windows ARM64)
+
+Cranelift ships with `x86` and `arm64` backends (Cargo.toml features). All 6
+targets use the same two backends — the triple determines calling convention
+(System V ABI on Linux/macOS, Windows ABI on Windows) and relocation model.
+
+Design:
+- [ ] Make target triple a parameter in NativeCompiler (currently hardcoded)
+- [ ] Generator compiles for ALL default targets, producing one `.native` per target
+- [ ] Resource naming: `Module.x86_64-linux.native`, `Module.aarch64-darwin.native`, etc.
+- [ ] Config/Maven plugin: `<targets>` list to restrict (e.g. only linux-x64 + mac-arm)
+- [ ] Runtime detection: `NativeMachineFactory` maps `os.name`+`os.arch` to the correct
+  `.native` resource and loads it automatically
+- [ ] Generated source: `NativeCodeHolder` loads the right resource for the current platform
+- [ ] NativeCodeSerializer: include target triple in the file header (version bump to 2)
+- [ ] Parallel: each target can compile independently (embarrassingly parallel with
+  per-target bridge instances)
 
 ### P1: Hybrid Machine — automatic threshold-based dispatch
 
@@ -162,6 +181,26 @@ Tasks:
 - [ ] Functions above threshold → Cranelift (native)
 - [ ] Functions with unsupported opcodes → fall back to Chicory AOT
 - [ ] Use hybrid mode to bisect sqlite4j2 codegen bug
+
+### P1: Parallel compilation
+
+Cranelift compilation is slow for large modules (~80s for 279 funcs in toml2json).
+Parallelizing across functions would give near-linear speedup on multi-core machines.
+
+**Key constraint**: Chicory `Instance` is NOT thread-safe. The `CraneliftBridge` wraps
+a single Chicory instance of cranelift_bridge.wasm, so it cannot be shared across
+threads. Each thread needs its own bridge instance.
+
+Design:
+- [ ] Create one `CraneliftBridge` per thread (each instantiates cranelift_bridge.wasm)
+- [ ] Partition functions across N threads (N = available cores)
+- [ ] Each thread compiles its partition sequentially using its own bridge
+- [ ] Collect `byte[][]` results into the shared array (each slot written by exactly one thread)
+- [ ] Use `ExecutorService` / `ForkJoinPool` for thread management
+- [ ] Bridge instantiation (~2s each) is amortized across many functions
+
+Estimated speedup: ~4-8x on typical developer machines. Bridge init cost (~2s × N threads)
+is acceptable when total compilation is 60-120s.
 
 ### P1: Rust bridge cleanup
 

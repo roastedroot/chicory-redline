@@ -32,9 +32,12 @@ jobs:
     - name: Checkout Chicory
       uses: actions/checkout@v6
       with:
-        repository: andreaTP/chicory
-        ref: exploration-cranelift
+        repository: dylibso/chicory
+        ref: main
         path: chicory
+        # repository: andreaTP/chicory
+        # ref: exploration-cranelift
+        # path: chicory
 
     - name: Set up Java
       uses: actions/setup-java@v5

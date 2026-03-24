@@ -1190,6 +1190,7 @@ public final class NativeCompiler {
         if (bt.params().isEmpty()) {
             bridge.exports().emitBrif(condition, thenBlock, elseBlock);
             bridge.exports().switchToBlock(thenBlock);
+            bridge.exports().sealBlock(thenBlock);
         } else {
             // Block has params — both branches need them.
             // brif only passes args to the true target, so we use a
@@ -1223,6 +1224,7 @@ public final class NativeCompiler {
 
             // Switch to then block, push its block params onto value stack
             bridge.exports().switchToBlock(thenBlock);
+            bridge.exports().sealBlock(thenBlock);
             for (int pid : thenParamIds) {
                 ctx.valueStack.push(pid);
             }
@@ -1253,6 +1255,7 @@ public final class NativeCompiler {
         }
         ctx.valueStack.trimTo(frame.stackHeight);
         bridge.exports().switchToBlock(frame.elseBlock);
+        bridge.exports().sealBlock(frame.elseBlock);
 
         // Push else block's param IDs for the else branch
         if (frame.elseParamIds != null) {
@@ -1301,6 +1304,7 @@ public final class NativeCompiler {
                     emitDeadPredecessor(frame.mergeBlock, frame.blockType.returns());
                 }
                 bridge.exports().switchToBlock(frame.mergeBlock);
+                bridge.exports().sealBlock(frame.mergeBlock);
                 // Always use trimTo + push: merge block params are the canonical
                 // values regardless of whether the block was reachable.
                 valueStack.trimTo(frame.stackHeight);
@@ -1320,6 +1324,7 @@ public final class NativeCompiler {
                                 frame.mergeBlock, frame.blockType.returns().size(), valueStack);
                     }
                     bridge.exports().switchToBlock(frame.elseBlock);
+                    bridge.exports().sealBlock(frame.elseBlock);
                     // Implicit else: pass block params through to merge.
                     // For IF without ELSE, params == returns per Wasm spec.
                     if (frame.elseParamIds != null && frame.elseParamIds.length > 0) {
@@ -1351,6 +1356,7 @@ public final class NativeCompiler {
                     }
                 }
                 bridge.exports().switchToBlock(frame.mergeBlock);
+                bridge.exports().sealBlock(frame.mergeBlock);
                 valueStack.trimTo(frame.stackHeight);
                 for (int pid : frame.mergeParamIds) {
                     valueStack.push(pid);

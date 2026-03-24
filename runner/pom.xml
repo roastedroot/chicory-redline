@@ -40,7 +40,7 @@
     <dependency>
       <groupId>com.dylibso.chicory</groupId>
       <artifactId>wasm-corpus</artifactId>
-      <version>${chicory.version}</version>
+      <version>999-SNAPSHOT</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -67,7 +67,7 @@
       <plugin>
         <groupId>com.dylibso.chicory</groupId>
         <artifactId>test-gen-plugin</artifactId>
-        <version>${chicory.version}</version>
+        <version>999-SNAPSHOT</version>
         <configuration>
           <includedWasts>
             <wast>address.wast</wast>
