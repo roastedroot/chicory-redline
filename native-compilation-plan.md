@@ -213,7 +213,7 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
 ## How to build and test
 
 ```bash
-# Requires Java 25
+# Requires Java 25 (for runner module; compiler/bridge only need Java 11)
 java -version  # should show 25
 
 # 1. Rebuild Rust bridge (only when lib.rs changes)
@@ -224,12 +224,15 @@ cd ..
 # 2. Full build (from repo root)
 mvn clean install
 
-# Run specific tests
-mvn install -pl compiler -Dtest=AddTest
-mvn install -pl compiler -Dtest=SpecV1ConstTest
+# Run specific tests (spec tests and unit tests are in runner module)
+mvn clean install -DskipTests && mvn install -pl runner -Dtest=AddTest
+mvn clean install -DskipTests && mvn install -pl runner -Dtest=SpecV1ConstTest
+
+# Compiler-only tests (UnsupportedOpcodeTest)
+mvn clean install -DskipTests && mvn install -pl compiler
 ```
 
-**Important**: After rebuilding Rust, you MUST run `mvn clean install` (not just
-the compiler module). The annotation processor reads the .wasm file at compile
-time — if the .wasm changed but Java sources didn't, incremental compilation may
-skip regeneration. Always use `clean install` to avoid stale state.
+**Important**: Always use `mvn clean install` (not `-pl`) for the initial build.
+The annotation processor reads the .wasm file at compile time — incremental
+builds may skip regeneration. Also, `-pl runner` does NOT rebuild the compiler
+module, so changes in compiler/ require a full rebuild first.
