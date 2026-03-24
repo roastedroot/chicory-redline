@@ -50,14 +50,15 @@ public final class NativeCompiler {
      * Structurally equal FunctionTypes get the same canonical index,
      * enabling correct call_indirect type checking with duplicate types.
      */
-    static int[] buildCanonicalTypeMap(WasmModule module) {
+    public static int[] buildCanonicalTypeMap(WasmModule module) {
         var ts = module.typeSection();
         int count = ts.subTypeCount();
         int[] map = new int[count];
         var seen = new java.util.HashMap<FunctionType, Integer>();
         for (int i = 0; i < count; i++) {
             var type = ts.getType(i);
-            if (type instanceof FunctionType ft) {
+            if (type instanceof FunctionType) {
+                FunctionType ft = (FunctionType) type;
                 Integer canonical = seen.get(ft);
                 if (canonical != null) {
                     map[i] = canonical;

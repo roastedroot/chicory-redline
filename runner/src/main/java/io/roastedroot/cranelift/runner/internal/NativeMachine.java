@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler.internal;
+package io.roastedroot.cranelift.runner.internal;
 
 import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.runtime.Machine;
@@ -7,6 +7,8 @@ import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.ValType;
 import com.dylibso.chicory.wasm.types.Value;
 import io.roastedroot.cranelift.bridge.CraneliftBridge;
+import io.roastedroot.cranelift.compiler.internal.CtxBuffer;
+import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;

@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler.internal;
+package io.roastedroot.cranelift.runner.internal;
 
 import com.dylibso.chicory.runtime.HostFunction;
 import com.dylibso.chicory.runtime.ImportValues;

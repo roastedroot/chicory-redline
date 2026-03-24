@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler;
+package io.roastedroot.cranelift.runner;
 
 import com.dylibso.chicory.runtime.GlobalInstance;
 import com.dylibso.chicory.runtime.Instance;
@@ -10,10 +10,10 @@ import com.dylibso.chicory.wasm.types.MemoryLimits;
 import com.dylibso.chicory.wasm.types.MutabilityType;
 import com.dylibso.chicory.wasm.types.Table;
 import com.dylibso.chicory.wasm.types.ValType;
-import io.roastedroot.cranelift.compiler.internal.NativeGlobalInstance;
-import io.roastedroot.cranelift.compiler.internal.NativeMachine;
-import io.roastedroot.cranelift.compiler.internal.NativeMemory;
-import io.roastedroot.cranelift.compiler.internal.NativeTable;
+import io.roastedroot.cranelift.runner.internal.NativeGlobalInstance;
+import io.roastedroot.cranelift.runner.internal.NativeMachine;
+import io.roastedroot.cranelift.runner.internal.NativeMemory;
+import io.roastedroot.cranelift.runner.internal.NativeTable;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;

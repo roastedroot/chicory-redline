@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler.internal;
+package io.roastedroot.cranelift.runner.internal;
 
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;

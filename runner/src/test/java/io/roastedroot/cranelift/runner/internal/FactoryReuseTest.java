@@ -1,11 +1,11 @@
-package io.roastedroot.cranelift.compiler.internal;
+package io.roastedroot.cranelift.runner.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.tools.wasm.Wat2Wasm;
 import com.dylibso.chicory.wasm.Parser;
-import io.roastedroot.cranelift.compiler.NativeMachineFactory;
+import io.roastedroot.cranelift.runner.NativeMachineFactory;
 import org.junit.jupiter.api.Test;
 
 public class FactoryReuseTest {

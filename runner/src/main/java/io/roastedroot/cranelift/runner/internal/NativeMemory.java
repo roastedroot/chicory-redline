@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler.internal;
+package io.roastedroot.cranelift.runner.internal;
 
 import static com.dylibso.chicory.runtime.ConstantEvaluators.computeConstantValue;
 

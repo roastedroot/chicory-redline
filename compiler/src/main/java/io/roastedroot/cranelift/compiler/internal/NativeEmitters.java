@@ -38,34 +38,66 @@ final class NativeEmitters {
     static void emitI32BinaryOp(EmitContext ctx, int op) {
         int b = ctx.valueStack.pop();
         int a = ctx.valueStack.pop();
-        int result =
-                switch (op) {
-                    case 0 -> ctx.bridge.exports().emitIadd(a, b);
-                    case 1 -> ctx.bridge.exports().emitIsub(a, b);
-                    case 2 -> ctx.bridge.exports().emitImul(a, b);
-                    case 3 -> ctx.bridge.exports().emitBand(a, b);
-                    case 4 -> ctx.bridge.exports().emitBor(a, b);
-                    case 5 -> ctx.bridge.exports().emitBxor(a, b);
-                    case 6 -> ctx.bridge.exports().emitIshl(a, b);
-                    case 7 -> ctx.bridge.exports().emitSshr(a, b);
-                    case 8 -> ctx.bridge.exports().emitUshr(a, b);
-                    case 9 -> ctx.bridge.exports().emitRotl(a, b);
-                    case 10 -> ctx.bridge.exports().emitRotr(a, b);
-                    default -> throw new IllegalArgumentException("Unknown i32 binary op: " + op);
-                };
+        int result;
+        switch (op) {
+            case 0:
+                result = ctx.bridge.exports().emitIadd(a, b);
+                break;
+            case 1:
+                result = ctx.bridge.exports().emitIsub(a, b);
+                break;
+            case 2:
+                result = ctx.bridge.exports().emitImul(a, b);
+                break;
+            case 3:
+                result = ctx.bridge.exports().emitBand(a, b);
+                break;
+            case 4:
+                result = ctx.bridge.exports().emitBor(a, b);
+                break;
+            case 5:
+                result = ctx.bridge.exports().emitBxor(a, b);
+                break;
+            case 6:
+                result = ctx.bridge.exports().emitIshl(a, b);
+                break;
+            case 7:
+                result = ctx.bridge.exports().emitSshr(a, b);
+                break;
+            case 8:
+                result = ctx.bridge.exports().emitUshr(a, b);
+                break;
+            case 9:
+                result = ctx.bridge.exports().emitRotl(a, b);
+                break;
+            case 10:
+                result = ctx.bridge.exports().emitRotr(a, b);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown i32 binary op: " + op);
+        }
         ctx.valueStack.push(result);
     }
 
     static void emitI32UnaryOp(EmitContext ctx, int op) {
         int val = ctx.valueStack.pop();
-        int result =
-                switch (op) {
-                    case 0 -> ctx.bridge.exports().emitClz(val);
-                    case 1 -> ctx.bridge.exports().emitCtz(val);
-                    case 2 -> ctx.bridge.exports().emitPopcnt(val);
-                    case 3 -> ctx.bridge.exports().emitEqz(val);
-                    default -> throw new IllegalArgumentException("Unknown i32 unary op: " + op);
-                };
+        int result;
+        switch (op) {
+            case 0:
+                result = ctx.bridge.exports().emitClz(val);
+                break;
+            case 1:
+                result = ctx.bridge.exports().emitCtz(val);
+                break;
+            case 2:
+                result = ctx.bridge.exports().emitPopcnt(val);
+                break;
+            case 3:
+                result = ctx.bridge.exports().emitEqz(val);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown i32 unary op: " + op);
+        }
         ctx.valueStack.push(result);
     }
 
@@ -73,14 +105,23 @@ final class NativeEmitters {
 
     static void emitI64UnaryOp(EmitContext ctx, int op) {
         int val = ctx.valueStack.pop();
-        int result =
-                switch (op) {
-                    case 0 -> ctx.bridge.exports().emitClz(val);
-                    case 1 -> ctx.bridge.exports().emitCtz(val);
-                    case 2 -> ctx.bridge.exports().emitPopcnt(val);
-                    case 3 -> ctx.bridge.exports().emitEqzI64(val);
-                    default -> throw new IllegalArgumentException("Unknown i64 unary op: " + op);
-                };
+        int result;
+        switch (op) {
+            case 0:
+                result = ctx.bridge.exports().emitClz(val);
+                break;
+            case 1:
+                result = ctx.bridge.exports().emitCtz(val);
+                break;
+            case 2:
+                result = ctx.bridge.exports().emitPopcnt(val);
+                break;
+            case 3:
+                result = ctx.bridge.exports().emitEqzI64(val);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown i64 unary op: " + op);
+        }
         ctx.valueStack.push(result);
     }
 
@@ -97,33 +138,63 @@ final class NativeEmitters {
     static void emitFloatBinaryOp(EmitContext ctx, int op) {
         int b = ctx.valueStack.pop();
         int a = ctx.valueStack.pop();
-        int result =
-                switch (op) {
-                    case 0 -> ctx.bridge.exports().emitFadd(a, b);
-                    case 1 -> ctx.bridge.exports().emitFsub(a, b);
-                    case 2 -> ctx.bridge.exports().emitFmul(a, b);
-                    case 3 -> ctx.bridge.exports().emitFdiv(a, b);
-                    case 4 -> ctx.bridge.exports().emitFmin(a, b);
-                    case 5 -> ctx.bridge.exports().emitFmax(a, b);
-                    case 6 -> ctx.bridge.exports().emitFcopysign(a, b);
-                    default -> throw new IllegalArgumentException("Unknown float binary op: " + op);
-                };
+        int result;
+        switch (op) {
+            case 0:
+                result = ctx.bridge.exports().emitFadd(a, b);
+                break;
+            case 1:
+                result = ctx.bridge.exports().emitFsub(a, b);
+                break;
+            case 2:
+                result = ctx.bridge.exports().emitFmul(a, b);
+                break;
+            case 3:
+                result = ctx.bridge.exports().emitFdiv(a, b);
+                break;
+            case 4:
+                result = ctx.bridge.exports().emitFmin(a, b);
+                break;
+            case 5:
+                result = ctx.bridge.exports().emitFmax(a, b);
+                break;
+            case 6:
+                result = ctx.bridge.exports().emitFcopysign(a, b);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown float binary op: " + op);
+        }
         ctx.valueStack.push(result);
     }
 
     static void emitFloatUnaryOp(EmitContext ctx, int op) {
         int val = ctx.valueStack.pop();
-        int result =
-                switch (op) {
-                    case 0 -> ctx.bridge.exports().emitFabs(val);
-                    case 1 -> ctx.bridge.exports().emitFneg(val);
-                    case 2 -> ctx.bridge.exports().emitCeil(val);
-                    case 3 -> ctx.bridge.exports().emitFloor(val);
-                    case 4 -> ctx.bridge.exports().emitTruncFloat(val);
-                    case 5 -> ctx.bridge.exports().emitNearest(val);
-                    case 6 -> ctx.bridge.exports().emitSqrt(val);
-                    default -> throw new IllegalArgumentException("Unknown float unary op: " + op);
-                };
+        int result;
+        switch (op) {
+            case 0:
+                result = ctx.bridge.exports().emitFabs(val);
+                break;
+            case 1:
+                result = ctx.bridge.exports().emitFneg(val);
+                break;
+            case 2:
+                result = ctx.bridge.exports().emitCeil(val);
+                break;
+            case 3:
+                result = ctx.bridge.exports().emitFloor(val);
+                break;
+            case 4:
+                result = ctx.bridge.exports().emitTruncFloat(val);
+                break;
+            case 5:
+                result = ctx.bridge.exports().emitNearest(val);
+                break;
+            case 6:
+                result = ctx.bridge.exports().emitSqrt(val);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown float unary op: " + op);
+        }
         ctx.valueStack.push(result);
     }
 
@@ -325,24 +396,53 @@ final class NativeEmitters {
         int offset = (int) ins.operands()[1];
         emitBoundsCheck(ctx, addr, offset, LOAD_ACCESS_SIZE[loadType]);
         int memBase = ctx.bridge.exports().useVar(ctx.memBaseVar);
-        int result =
-                switch (loadType) {
-                    case 0 -> ctx.bridge.exports().emitLoadI32(memBase, addr, offset);
-                    case 1 -> ctx.bridge.exports().emitLoadI64(memBase, addr, offset);
-                    case 2 -> ctx.bridge.exports().emitLoadF32(memBase, addr, offset);
-                    case 3 -> ctx.bridge.exports().emitLoadF64(memBase, addr, offset);
-                    case 4 -> ctx.bridge.exports().emitLoad8u(memBase, addr, offset);
-                    case 5 -> ctx.bridge.exports().emitLoad8s(memBase, addr, offset);
-                    case 6 -> ctx.bridge.exports().emitLoad16u(memBase, addr, offset);
-                    case 7 -> ctx.bridge.exports().emitLoad16s(memBase, addr, offset);
-                    case 8 -> ctx.bridge.exports().emitLoad8uI64(memBase, addr, offset);
-                    case 9 -> ctx.bridge.exports().emitLoad8sI64(memBase, addr, offset);
-                    case 10 -> ctx.bridge.exports().emitLoad16uI64(memBase, addr, offset);
-                    case 11 -> ctx.bridge.exports().emitLoad16sI64(memBase, addr, offset);
-                    case 12 -> ctx.bridge.exports().emitLoad32uI64(memBase, addr, offset);
-                    case 13 -> ctx.bridge.exports().emitLoad32sI64(memBase, addr, offset);
-                    default -> throw new IllegalArgumentException("Unknown load type: " + loadType);
-                };
+        int result;
+        switch (loadType) {
+            case 0:
+                result = ctx.bridge.exports().emitLoadI32(memBase, addr, offset);
+                break;
+            case 1:
+                result = ctx.bridge.exports().emitLoadI64(memBase, addr, offset);
+                break;
+            case 2:
+                result = ctx.bridge.exports().emitLoadF32(memBase, addr, offset);
+                break;
+            case 3:
+                result = ctx.bridge.exports().emitLoadF64(memBase, addr, offset);
+                break;
+            case 4:
+                result = ctx.bridge.exports().emitLoad8u(memBase, addr, offset);
+                break;
+            case 5:
+                result = ctx.bridge.exports().emitLoad8s(memBase, addr, offset);
+                break;
+            case 6:
+                result = ctx.bridge.exports().emitLoad16u(memBase, addr, offset);
+                break;
+            case 7:
+                result = ctx.bridge.exports().emitLoad16s(memBase, addr, offset);
+                break;
+            case 8:
+                result = ctx.bridge.exports().emitLoad8uI64(memBase, addr, offset);
+                break;
+            case 9:
+                result = ctx.bridge.exports().emitLoad8sI64(memBase, addr, offset);
+                break;
+            case 10:
+                result = ctx.bridge.exports().emitLoad16uI64(memBase, addr, offset);
+                break;
+            case 11:
+                result = ctx.bridge.exports().emitLoad16sI64(memBase, addr, offset);
+                break;
+            case 12:
+                result = ctx.bridge.exports().emitLoad32uI64(memBase, addr, offset);
+                break;
+            case 13:
+                result = ctx.bridge.exports().emitLoad32sI64(memBase, addr, offset);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown load type: " + loadType);
+        }
         ctx.valueStack.push(result);
     }
 
@@ -355,16 +455,35 @@ final class NativeEmitters {
         emitBoundsCheck(ctx, addr, offset, STORE_ACCESS_SIZE[storeType]);
         int memBase = ctx.bridge.exports().useVar(ctx.memBaseVar);
         switch (storeType) {
-            case 0 -> ctx.bridge.exports().emitStoreI32(memBase, addr, value, offset);
-            case 1 -> ctx.bridge.exports().emitStoreI64(memBase, addr, value, offset);
-            case 2 -> ctx.bridge.exports().emitStoreF32(memBase, addr, value, offset);
-            case 3 -> ctx.bridge.exports().emitStoreF64(memBase, addr, value, offset);
-            case 4 -> ctx.bridge.exports().emitStore8(memBase, addr, value, offset);
-            case 5 -> ctx.bridge.exports().emitStore16(memBase, addr, value, offset);
-            case 6 -> ctx.bridge.exports().emitStore8I64(memBase, addr, value, offset);
-            case 7 -> ctx.bridge.exports().emitStore16I64(memBase, addr, value, offset);
-            case 8 -> ctx.bridge.exports().emitStore32I64(memBase, addr, value, offset);
-            default -> throw new IllegalArgumentException("Unknown store type: " + storeType);
+            case 0:
+                ctx.bridge.exports().emitStoreI32(memBase, addr, value, offset);
+                break;
+            case 1:
+                ctx.bridge.exports().emitStoreI64(memBase, addr, value, offset);
+                break;
+            case 2:
+                ctx.bridge.exports().emitStoreF32(memBase, addr, value, offset);
+                break;
+            case 3:
+                ctx.bridge.exports().emitStoreF64(memBase, addr, value, offset);
+                break;
+            case 4:
+                ctx.bridge.exports().emitStore8(memBase, addr, value, offset);
+                break;
+            case 5:
+                ctx.bridge.exports().emitStore16(memBase, addr, value, offset);
+                break;
+            case 6:
+                ctx.bridge.exports().emitStore8I64(memBase, addr, value, offset);
+                break;
+            case 7:
+                ctx.bridge.exports().emitStore16I64(memBase, addr, value, offset);
+                break;
+            case 8:
+                ctx.bridge.exports().emitStore32I64(memBase, addr, value, offset);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown store type: " + storeType);
         }
     }
 

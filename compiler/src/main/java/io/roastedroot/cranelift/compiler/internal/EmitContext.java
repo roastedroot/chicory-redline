@@ -123,7 +123,8 @@ final class EmitContext {
     FunctionType resolveCallTargetType(int funcId) {
         if (funcId < numImports) {
             int idx = 0;
-            for (var imp : module.importSection().stream().toList()) {
+            for (var imp :
+                    module.importSection().stream().collect(java.util.stream.Collectors.toList())) {
                 if (imp.importType() == ExternalType.FUNCTION) {
                     if (idx == funcId) {
                         int typeIdx = ((FunctionImport) imp).typeIndex();
@@ -141,7 +142,8 @@ final class EmitContext {
 
     ValType resolveGlobalType(int globalIdx) {
         int importGlobalIdx = 0;
-        for (var imp : module.importSection().stream().toList()) {
+        for (var imp :
+                module.importSection().stream().collect(java.util.stream.Collectors.toList())) {
             if (imp.importType() == ExternalType.GLOBAL) {
                 if (importGlobalIdx == globalIdx) {
                     return ((com.dylibso.chicory.wasm.types.GlobalImport) imp).type();

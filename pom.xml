@@ -34,6 +34,7 @@
     <module>build-time-compiler</module>
     <module>compiler</module>
     <module>compiler-maven-plugin</module>
+    <module>runner</module>
   </modules>
 
   <scm>
@@ -47,7 +48,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <maven.compiler.release>25</maven.compiler.release>
+    <maven.compiler.release>11</maven.compiler.release>
     <maven.compiler.failOnWarning>true</maven.compiler.failOnWarning>
     <maven.dependency.failOnWarning>true</maven.dependency.failOnWarning>
     <project.build.outputTimestamp>2026-02-23T16:10:01Z</project.build.outputTimestamp>
@@ -111,7 +112,6 @@
           <version>${maven-compiler-plugin.version}</version>
           <configuration>
             <parameters>true</parameters>
-            <release>25</release>
             <annotationProcessorPathsUseDepMgmt>true</annotationProcessorPathsUseDepMgmt>
           </configuration>
         </plugin>

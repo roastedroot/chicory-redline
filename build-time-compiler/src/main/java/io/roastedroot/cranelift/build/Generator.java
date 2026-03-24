@@ -114,7 +114,7 @@ public class Generator {
                 + "import com.dylibso.chicory.wasm.Parser;\n"
                 + "import com.dylibso.chicory.wasm.WasmModule;\n"
                 + "import io.roastedroot.cranelift.compiler.NativeCodeSerializer;\n"
-                + "import io.roastedroot.cranelift.compiler.NativeMachineFactory;\n"
+                + "import io.roastedroot.cranelift.runner.NativeMachineFactory;\n"
                 + "import java.io.IOException;\n"
                 + "import java.io.InputStream;\n"
                 + "import java.io.UncheckedIOException;\n"

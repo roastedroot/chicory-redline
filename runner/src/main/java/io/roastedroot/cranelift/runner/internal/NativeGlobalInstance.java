@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler.internal;
+package io.roastedroot.cranelift.runner.internal;
 
 import com.dylibso.chicory.runtime.GlobalInstance;
 import com.dylibso.chicory.wasm.types.MutabilityType;
