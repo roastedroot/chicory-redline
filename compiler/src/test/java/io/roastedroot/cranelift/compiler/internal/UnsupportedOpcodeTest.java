@@ -12,6 +12,20 @@ import org.junit.jupiter.api.Test;
 public class UnsupportedOpcodeTest {
 
     @Test
+    public void shouldCompileEmptyFunction() {
+        var wat = "(module" + "  (func (export \"noop\") (param i32))" + ")";
+
+        var module = Parser.parse(Wat2Wasm.parse(wat));
+        var bridge = new CraneliftBridge();
+        bridge.init("x86_64-unknown-linux-gnu");
+        var compiler = new NativeCompiler(bridge, module);
+
+        var result = compiler.compileAll();
+        assertTrue(result.length == 1, "Should compile 1 function");
+        assertTrue(result[0] != null && result[0].length > 0, "Should produce non-empty code");
+    }
+
+    @Test
     public void shouldFailAtCompileTimeForAtomicOpcode() {
         var wat =
                 "(module"

@@ -129,13 +129,9 @@ public final class NativeCompiler {
         for (int i = 0; i < count; i++) {
             try {
                 results[i] = compileFunction(i);
-            } catch (UnsupportedOperationException e) {
+            } catch (RuntimeException e) {
                 throw new ChicoryException(
                         "Failed to compile function " + i + ": " + e.getMessage(), e);
-            } catch (RuntimeException e) {
-                System.err.println(
-                        "WARNING: Failed to compile function " + i + ": " + e.getMessage());
-                results[i] = null;
             }
         }
         return results;
