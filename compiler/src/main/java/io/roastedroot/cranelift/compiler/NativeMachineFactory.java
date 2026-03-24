@@ -41,13 +41,19 @@ public final class NativeMachineFactory implements AutoCloseable {
 
     private final Arena arena = Arena.ofShared();
     private final WasmModule module;
+    private final byte[][] precompiledCode;
     private final List<NativeTable> nativeTables = new ArrayList<>();
     private MemorySegment globalsBuffer;
     private int globalIndex;
     private NativeMachine nativeMachine;
 
     public NativeMachineFactory(WasmModule module) {
+        this(module, null);
+    }
+
+    public NativeMachineFactory(WasmModule module, byte[][] precompiledCode) {
         this.module = module;
+        this.precompiledCode = precompiledCode;
 
         // Pre-allocate globals buffer
         int importGlobalCount =
@@ -97,7 +103,8 @@ public final class NativeMachineFactory implements AutoCloseable {
                                 .count();
         this.globalIndex = importGlobalCount;
         this.nativeTables.clear();
-        this.nativeMachine = new NativeMachine(instance, arena, nativeTables, globalsBuffer);
+        this.nativeMachine =
+                new NativeMachine(instance, arena, nativeTables, globalsBuffer, precompiledCode);
         return nativeMachine;
     }
 

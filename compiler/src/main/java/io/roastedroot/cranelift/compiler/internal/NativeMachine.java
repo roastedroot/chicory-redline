@@ -96,7 +96,8 @@ public final class NativeMachine implements Machine {
             Instance instance,
             Arena arena,
             java.util.List<NativeTable> sharedTables,
-            MemorySegment sharedGlobalsBuffer) {
+            MemorySegment sharedGlobalsBuffer,
+            byte[][] precompiledCode) {
         this.instance = instance;
         this.arena = arena;
         var module = instance.module();
@@ -173,12 +174,16 @@ public final class NativeMachine implements Machine {
         ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.TABLE_PTRS, tablePtrsArray.address());
         ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.FUNC_TYPES_PTR, funcTypesArray.address());
 
-        // Compile all module-defined functions
-        var bridge = new CraneliftBridge();
-        bridge.init("x86_64-unknown-linux-gnu");
-
-        var compiler = new NativeCompiler(bridge, module);
-        byte[][] compiledCode = compiler.compileAll();
+        // Compile all module-defined functions (or use pre-compiled code)
+        byte[][] compiledCode;
+        if (precompiledCode != null) {
+            compiledCode = precompiledCode;
+        } else {
+            var bridge = new CraneliftBridge();
+            bridge.init("x86_64-unknown-linux-gnu");
+            var compiler = new NativeCompiler(bridge, module);
+            compiledCode = compiler.compileAll();
+        }
 
         // mmap all compiled code into a single executable region
         long totalSize = 0;

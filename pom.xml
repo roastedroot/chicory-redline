@@ -31,7 +31,9 @@
 
   <modules>
     <module>bridge</module>
+    <module>build-time-compiler</module>
     <module>compiler</module>
+    <module>compiler-maven-plugin</module>
   </modules>
 
   <scm>
@@ -64,6 +66,10 @@
 
     <!-- test time versions -->
     <junit.version>5.14.3</junit.version>
+
+    <!-- maven plugin versions -->
+    <maven.version>3.9.9</maven.version>
+    <maven-plugin-tools.version>3.15.2</maven-plugin-tools.version>
 
     <!-- runtime versions -->
     <chicory.version>999-SNAPSHOT</chicory.version>

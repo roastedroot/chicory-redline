@@ -122,16 +122,27 @@ Native:        911,764 ops/s  (144x)   <- within 9% of JVM compiled
 
 ## Next priorities
 
-### P1: Maven plugin & easy integration
+### P1: Module split — compiler (Java 11) + runner (Java 25)
 
-Before hybrid machine or further features, Cranelift4J needs to be easy to
-integrate into user projects. Currently users must wire NativeMachineFactory
-manually. A Maven plugin (like Chicory's `chicory-compiler-maven-plugin`)
-would enable build-time compilation and simple dependency-based integration.
+The current compiler module mixes compilation (pure Java, no Panama) with
+execution (Panama FFM, Java 25). Split into two modules so the Maven plugin
+and build-time compiler can run on Java 11.
 
+See `module-split-plan.md` for detailed task breakdown.
+
+- [ ] Split compiler/ into compiler/ (Java 11) + runner/ (Java 25)
 - [ ] Maven plugin for build-time Cranelift compilation
 - [ ] Documentation / quickstart for user projects
-- [ ] Publish to Maven Central (or snapshot repo)
+
+### P1: Cross-compilation for all targets
+
+After the module split, the compiler module (Java 11) can cross-compile
+for any target architecture. The target triple becomes a parameter.
+
+- [ ] Make target triple a parameter in NativeCompiler (currently hardcoded x86_64)
+- [ ] Compile for multiple targets at build time (x86_64-linux, aarch64-linux, x86_64-darwin, aarch64-darwin)
+- [ ] Runtime target detection: load correct `.native` resource for current platform
+- [ ] Name resources per target: `Module.x86_64-linux.native`, etc.
 
 ### P1: Hybrid Machine — automatic threshold-based dispatch
 

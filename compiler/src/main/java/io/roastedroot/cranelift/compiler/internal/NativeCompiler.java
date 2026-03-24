@@ -27,14 +27,14 @@ import java.util.List;
  * <p>The {@link NativeValueStack} tracks Cranelift value IDs with scope-aware
  * restore for polymorphic stack behavior after unreachable code.
  */
-final class NativeCompiler {
+public final class NativeCompiler {
 
     private final CraneliftBridge bridge;
     private final WasmModule module;
     private final int numImports;
     private final int[] canonicalTypeMap;
 
-    NativeCompiler(CraneliftBridge bridge, WasmModule module) {
+    public NativeCompiler(CraneliftBridge bridge, WasmModule module) {
         this.bridge = bridge;
         this.module = module;
         this.numImports =
@@ -121,16 +121,20 @@ final class NativeCompiler {
 
     // --- Compilation ---
 
-    byte[][] compileAll() {
+    public byte[][] compileAll() {
         int count = module.codeSection().functionBodyCount();
         byte[][] results = new byte[count][];
 
         for (int i = 0; i < count; i++) {
             try {
                 results[i] = compileFunction(i);
-            } catch (RuntimeException e) {
+            } catch (UnsupportedOperationException e) {
                 throw new ChicoryException(
                         "Failed to compile function " + i + ": " + e.getMessage(), e);
+            } catch (RuntimeException e) {
+                System.err.println(
+                        "WARNING: Failed to compile function " + i + ": " + e.getMessage());
+                results[i] = null;
             }
         }
         return results;
