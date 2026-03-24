@@ -42,40 +42,47 @@ wasm-build/                             Rust Cranelift FFI wrapper
 ├── Cargo.toml
 └── src/lib.rs                          ~1430 lines, flat Wasm exports
 
-bridge/                                 Java bridge module
+bridge/                                 Java bridge module (Java 11)
 ├── pom.xml
 └── src/main/java/.../bridge/
     └── CraneliftBridge.java            Java wrapper (@WasmModuleInterface)
 
-compiler/                               Native compiler + spec tests
+compiler/                               Compilation logic (Java 11, no Panama)
 ├── pom.xml
-├── src/main/java/.../compiler/
-│   └── NativeMachineFactory.java       Public API (AutoCloseable, shared Arena)
 ├── src/main/java/.../compiler/internal/
-│   ├── NativeMachine.java              Machine impl with Panama downcalls + Cleaner
 │   ├── NativeCompiler.java             Thin orchestrator (analyzer -> emitters)
 │   ├── NativeAnalyzer.java             Pre-pass: reachability via exitBlockDepth
 │   ├── NativeValueStack.java           Scope-aware Cranelift value ID stack
 │   ├── NativeEmitters.java             Static opcode emission methods
 │   ├── EmitContext.java                Shared state for emitters
-│   ├── CtxBuffer.java                  ctxBuffer layout constants (256 bytes)
+│   └── CtxBuffer.java                  ctxBuffer layout constants (256 bytes)
+└── src/test/java/                      UnsupportedOpcodeTest
+
+runner/                                 Runtime execution (Java 25, Panama FFM)
+├── pom.xml
+├── src/main/java/.../runner/
+│   └── NativeMachineFactory.java       Public API (AutoCloseable, shared Arena)
+├── src/main/java/.../runner/internal/
+│   ├── NativeMachine.java              Machine impl with Panama downcalls + Cleaner
 │   ├── NativeTable.java                Off-heap 16-byte anyfunc table entries
 │   ├── NativeMemory.java               Off-heap memory via Panama
 │   ├── NativeGlobalInstance.java        Off-heap globals buffer
 │   └── PanamaExecutor.java             mmap/mprotect helpers
-└── src/test/java/
-    ├── io/roastedroot/.../internal/     Unit tests (AddTest, CallTest, etc.)
-    └── com/dylibso/chicory/testing/     Spec test harness (NativeInstanceBuilder, etc.)
+└── src/test/java/                      Unit tests + spec tests (~28020 tests)
+
+build-time-compiler/                    Build-time API (Java 11)
+compiler-maven-plugin/                  Maven plugin (Java 11)
 
 cranelift_bridge.wasm                   Pre-built Wasm binary (~5MB, root level)
 ```
 
 ## Current state
 
-**28022 tests, 0 failures, 0 errors, 103 skipped**. Requires Java 25.
+**28023 tests, 0 failures, 0 errors, 103 skipped**. Requires Java 25 for runner.
+Compiler module is Java 11 — usable by Maven plugin on any JDK >= 11.
 Platform: **x86_64 Linux only** (target triple hardcoded in NativeMachine).
 
-Public API (`io.roastedroot.cranelift.compiler.NativeMachineFactory`):
+Public API (`io.roastedroot.cranelift.runner.NativeMachineFactory`):
 ```java
 var factory = new NativeMachineFactory(module);
 Instance.builder(module)
@@ -122,16 +129,13 @@ Native:        911,764 ops/s  (144x)   <- within 9% of JVM compiled
 
 ## Next priorities
 
-### P1: Module split — compiler (Java 11) + runner (Java 25)
+### P1: Module split — compiler (Java 11) + runner (Java 25) — DONE
 
-The current compiler module mixes compilation (pure Java, no Panama) with
-execution (Panama FFM, Java 25). Split into two modules so the Maven plugin
-and build-time compiler can run on Java 11.
+Split into compiler (Java 11, pure compilation) and runner (Java 25, Panama FFM).
+Maven plugin and build-time compiler now work on any JDK >= 11.
 
-See `module-split-plan.md` for detailed task breakdown.
-
-- [ ] Split compiler/ into compiler/ (Java 11) + runner/ (Java 25)
-- [ ] Maven plugin for build-time Cranelift compilation
+- [x] Split compiler/ into compiler/ (Java 11) + runner/ (Java 25)
+- [ ] Maven plugin for build-time Cranelift compilation (scaffolding done)
 - [ ] Documentation / quickstart for user projects
 
 ### P1: Cross-compilation for all targets
@@ -198,10 +202,13 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
 - **Public API**: moved `NativeMachineFactory` to `io.roastedroot.cranelift.compiler`,
   added `createMemory()` static method
 - **Rust bridge**: avoided cloning `Function` in `compile()` via `std::mem::replace`
-- **Compile-time failure**: unsupported opcodes now throw `ChicoryException` at
-  instantiation time instead of silently producing stubs that fail at runtime.
-  Test: `UnsupportedOpcodeTest`
+- **Compile-time failure**: all compilation errors (unsupported opcodes, bridge
+  crashes) now throw `ChicoryException` at instantiation time instead of silently
+  producing stubs that fail at runtime. Test: `UnsupportedOpcodeTest`
 - **wasm-tools**: replaced `wabt` test dependency with Chicory's `wasm-tools`
+- **Module split**: compiler (Java 11) + runner (Java 25). Compiler has no Panama
+  dependency — usable by Maven plugin on any JDK >= 11. NativeEmitters converted
+  to Java 11 syntax (no switch expressions, no instanceof patterns, no Stream.toList)
 
 ## How to build and test
 
