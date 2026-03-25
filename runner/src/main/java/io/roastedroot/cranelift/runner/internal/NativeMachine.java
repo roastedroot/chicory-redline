@@ -6,7 +6,6 @@ import com.dylibso.chicory.wasm.ChicoryException;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.ValType;
 import com.dylibso.chicory.wasm.types.Value;
-import io.roastedroot.cranelift.bridge.CraneliftBridge;
 import io.roastedroot.cranelift.compiler.internal.CtxBuffer;
 import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
 import java.lang.foreign.Arena;
@@ -181,9 +180,7 @@ public final class NativeMachine implements Machine {
         if (precompiledCode != null) {
             compiledCode = precompiledCode;
         } else {
-            var bridge = new CraneliftBridge();
-            bridge.init("x86_64-unknown-linux-gnu");
-            var compiler = new NativeCompiler(bridge, module);
+            var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
             compiledCode = compiler.compileAll();
         }
 

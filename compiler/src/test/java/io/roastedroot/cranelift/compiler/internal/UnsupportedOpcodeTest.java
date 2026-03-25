@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.dylibso.chicory.tools.wasm.Wat2Wasm;
 import com.dylibso.chicory.wasm.ChicoryException;
 import com.dylibso.chicory.wasm.Parser;
-import io.roastedroot.cranelift.bridge.CraneliftBridge;
 import org.junit.jupiter.api.Test;
 
 public class UnsupportedOpcodeTest {
@@ -16,9 +15,7 @@ public class UnsupportedOpcodeTest {
         var wat = "(module" + "  (func (export \"noop\") (param i32))" + ")";
 
         var module = Parser.parse(Wat2Wasm.parse(wat));
-        var bridge = new CraneliftBridge();
-        bridge.init("x86_64-unknown-linux-gnu");
-        var compiler = new NativeCompiler(bridge, module);
+        var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
 
         var result = compiler.compileAll();
         assertTrue(result.length == 1, "Should compile 1 function");
@@ -59,9 +56,7 @@ public class UnsupportedOpcodeTest {
                         + ")";
 
         var module = Parser.parse(Wat2Wasm.parse(wat));
-        var bridge = new CraneliftBridge();
-        bridge.init("x86_64-unknown-linux-gnu");
-        var compiler = new NativeCompiler(bridge, module);
+        var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
 
         var result = compiler.compileAll();
         assertTrue(result.length == 2, "Should compile 2 functions");
@@ -79,9 +74,7 @@ public class UnsupportedOpcodeTest {
                         + ")";
 
         var module = Parser.parse(Wat2Wasm.parse(wat));
-        var bridge = new CraneliftBridge();
-        bridge.init("x86_64-unknown-linux-gnu");
-        var compiler = new NativeCompiler(bridge, module);
+        var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
 
         var ex = assertThrows(ChicoryException.class, compiler::compileAll);
 
@@ -104,9 +97,7 @@ public class UnsupportedOpcodeTest {
                         + ")";
 
         var module = Parser.parse(Wat2Wasm.parse(wat));
-        var bridge = new CraneliftBridge();
-        bridge.init("x86_64-unknown-linux-gnu");
-        var compiler = new NativeCompiler(bridge, module);
+        var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
 
         var ex = assertThrows(ChicoryException.class, compiler::compileAll);
 

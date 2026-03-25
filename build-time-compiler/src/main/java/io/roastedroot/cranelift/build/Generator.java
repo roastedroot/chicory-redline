@@ -8,7 +8,6 @@ import com.dylibso.chicory.wasm.WasmWriter;
 import com.dylibso.chicory.wasm.types.OpCode;
 import com.dylibso.chicory.wasm.types.RawSection;
 import com.dylibso.chicory.wasm.types.SectionId;
-import io.roastedroot.cranelift.bridge.CraneliftBridge;
 import io.roastedroot.cranelift.compiler.NativeCodeSerializer;
 import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
 import java.io.ByteArrayOutputStream;
@@ -28,9 +27,7 @@ public class Generator {
     public void generateNativeCode() throws IOException {
         var module = Parser.parse(config.wasmFile());
 
-        var bridge = new CraneliftBridge();
-        bridge.init("x86_64-unknown-linux-gnu");
-        var compiler = new NativeCompiler(bridge, module);
+        var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
         byte[][] compiledCode = compiler.compileAll();
 
         var packagePath = config.getPackageName().replace('.', '/');

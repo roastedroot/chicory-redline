@@ -9,10 +9,15 @@ import com.dylibso.chicory.wasm.types.OpCode;
 import com.dylibso.chicory.wasm.types.ValType;
 import io.roastedroot.cranelift.bridge.CraneliftBridge;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * Thin orchestrator that compiles Wasm functions to native code via Cranelift.
@@ -30,12 +35,26 @@ import java.util.List;
 public final class NativeCompiler {
 
     private final CraneliftBridge bridge;
+    private final String triple;
     private final WasmModule module;
     private final int numImports;
     private final int[] canonicalTypeMap;
 
-    public NativeCompiler(CraneliftBridge bridge, WasmModule module) {
+    public NativeCompiler(String triple, WasmModule module) {
+        this.bridge = null;
+        this.triple = triple;
+        this.module = module;
+        this.numImports =
+                (int)
+                        module.importSection().stream()
+                                .filter(i -> i.importType() == ExternalType.FUNCTION)
+                                .count();
+        this.canonicalTypeMap = buildCanonicalTypeMap(module);
+    }
+
+    private NativeCompiler(CraneliftBridge bridge, String triple, WasmModule module) {
         this.bridge = bridge;
+        this.triple = triple;
         this.module = module;
         this.numImports =
                 (int)
@@ -122,16 +141,61 @@ public final class NativeCompiler {
 
     // --- Compilation ---
 
+    private static final ExecutorService POOL =
+            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
     public byte[][] compileAll() {
         int count = module.codeSection().functionBodyCount();
         byte[][] results = new byte[count][];
+        int threads = Math.min(Runtime.getRuntime().availableProcessors(), count);
+        if (threads < 1) {
+            threads = 1;
+        }
 
-        for (int i = 0; i < count; i++) {
+        int chunkSize = (count + threads - 1) / threads;
+        List<Future<?>> futures = new ArrayList<>();
+
+        for (int t = 0; t < threads; t++) {
+            int start = t * chunkSize;
+            int end = Math.min(start + chunkSize, count);
+            if (start >= count) {
+                break;
+            }
+
+            futures.add(
+                    POOL.submit(
+                            () -> {
+                                var threadBridge = new CraneliftBridge();
+                                threadBridge.init(triple);
+                                var threadCompiler =
+                                        new NativeCompiler(threadBridge, triple, module);
+                                for (int i = start; i < end; i++) {
+                                    try {
+                                        results[i] = threadCompiler.compileFunction(i);
+                                    } catch (RuntimeException e) {
+                                        throw new ChicoryException(
+                                                "Failed to compile function "
+                                                        + i
+                                                        + ": "
+                                                        + e.getMessage(),
+                                                e);
+                                    }
+                                }
+                                return null;
+                            }));
+        }
+
+        for (Future<?> f : futures) {
             try {
-                results[i] = compileFunction(i);
-            } catch (RuntimeException e) {
-                throw new ChicoryException(
-                        "Failed to compile function " + i + ": " + e.getMessage(), e);
+                f.get();
+            } catch (ExecutionException e) {
+                if (e.getCause() instanceof RuntimeException) {
+                    throw (RuntimeException) e.getCause();
+                }
+                throw new ChicoryException("Parallel compilation failed", e.getCause());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new ChicoryException("Compilation interrupted", e);
             }
         }
         return results;
