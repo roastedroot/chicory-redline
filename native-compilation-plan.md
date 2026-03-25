@@ -117,6 +117,7 @@ All skipped tests are assert_trap or validation tests. Zero happy-path failures.
 | shootout benchmarks | ~12-37KB | PASS | All 3 benchmarks correct |
 | bazel-wasm-repro (toml2json) | 237KB | PASS | 279 funcs, ~80s compilation |
 | jq4j | 951KB | FAIL (9/21) | 24 funcs missing atomic opcodes |
+| prism (Ruby parser) | 564KB | PASS | 10x faster than Chicory AOT, build-time compilation via Maven plugin |
 | sqlite4j2 | 849KB | FAIL | Data-dependent codegen bug, parked until hybrid machine |
 
 ### Benchmark results (iterFact, input=1000)
