@@ -220,6 +220,23 @@ Remaining issue: generated code and test infrastructure don't call close().
 Options: make generated code expose factory for closing, add Instance.close()
 to Chicory upstream, or use Arena.ofAuto() for GC-aware native memory tracking.
 
+### P3: Disable runtime compilation when build-time compilation is used
+
+When the Maven plugin has precompiled native code, the runner should never
+fall back to runtime compilation. Currently `NativeMachine` compiles at
+runtime if `precompiledCode == null`. This wastes resources and masks
+missing `.native` files.
+
+Tasks:
+- [ ] Remove runtime compilation fallback from `NativeMachine` (delete the
+  `new NativeCompiler(...)` path)
+- [ ] `NativeMachineFactory(module)` (no precompiled code) should throw or
+  be removed — force users to provide precompiled code or use the generated
+  builder
+- [ ] Generated code already throws `UnsupportedOperationException` if the
+  `.native` resource is missing — verify this is clear and actionable
+- [ ] Keep runtime compilation only for tests (NativeInstanceBuilder)
+
 ### P2: Native memory.copy/fill (optimization)
 
 Current memory.copy/fill go through Java trampoline (native -> upcall -> Java).
