@@ -17,7 +17,12 @@ final class PanamaExecutor {
     private static final int PROT_WRITE = 0x2;
     private static final int PROT_EXEC = 0x4;
     private static final int MAP_PRIVATE = 0x02;
-    private static final int MAP_ANONYMOUS = 0x20;
+    private static final int MAP_ANONYMOUS;
+
+    static {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        MAP_ANONYMOUS = os.contains("mac") || os.contains("darwin") ? 0x1000 : 0x20;
+    }
 
     private static final java.lang.invoke.MethodHandle MMAP;
     private static final java.lang.invoke.MethodHandle MPROTECT;
