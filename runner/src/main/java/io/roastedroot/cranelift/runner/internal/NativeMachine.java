@@ -180,7 +180,9 @@ public final class NativeMachine implements Machine {
         if (precompiledCode != null) {
             compiledCode = precompiledCode;
         } else {
-            var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
+            var compiler =
+                    new NativeCompiler(
+                            io.roastedroot.cranelift.compiler.CraneliftTarget.detectHost(), module);
             compiledCode = compiler.compileAll();
         }
 

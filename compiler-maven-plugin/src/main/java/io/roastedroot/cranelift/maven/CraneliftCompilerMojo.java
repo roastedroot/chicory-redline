@@ -4,6 +4,7 @@ import io.roastedroot.cranelift.build.Config;
 import io.roastedroot.cranelift.build.Generator;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -13,7 +14,8 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
 /**
- * Compiles a Wasm module to native x86_64 code at build time via Cranelift.
+ * Compiles a Wasm module to native code at build time via Cranelift.
+ * By default compiles for all supported targets (cross-compilation).
  */
 @Mojo(name = "compile", defaultPhase = LifecyclePhase.GENERATE_SOURCES, threadSafe = true)
 public class CraneliftCompilerMojo extends AbstractMojo {
@@ -34,6 +36,9 @@ public class CraneliftCompilerMojo extends AbstractMojo {
             defaultValue = "${project.build.directory}/generated-sources/cranelift-compiler")
     private File targetSourceFolder;
 
+    /** Target triples to compile for. Defaults to all supported targets. */
+    @Parameter private List<String> targets;
+
     @Parameter(property = "project", required = true, readonly = true)
     private MavenProject project;
 
@@ -41,13 +46,16 @@ public class CraneliftCompilerMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException {
         getLog().info("Cranelift: compiling " + name + " from " + wasmFile);
 
-        var config =
+        var configBuilder =
                 Config.builder()
                         .withWasmFile(wasmFile.toPath())
                         .withName(name)
                         .withTargetResourceFolder(targetResourceFolder.toPath())
-                        .withTargetSourceFolder(targetSourceFolder.toPath())
-                        .build();
+                        .withTargetSourceFolder(targetSourceFolder.toPath());
+        if (targets != null && !targets.isEmpty()) {
+            configBuilder.withTargets(targets);
+        }
+        var config = configBuilder.build();
 
         var generator = new Generator(config);
 

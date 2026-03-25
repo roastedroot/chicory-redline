@@ -1,6 +1,8 @@
 package io.roastedroot.cranelift.build;
 
+import io.roastedroot.cranelift.compiler.CraneliftTarget;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.StringJoiner;
 
 public final class Config {
@@ -9,12 +11,19 @@ public final class Config {
     private final String name;
     private final Path targetResourceFolder;
     private final Path targetSourceFolder;
+    private final List<String> targets;
 
-    private Config(Path wasmFile, String name, Path targetResourceFolder, Path targetSourceFolder) {
+    private Config(
+            Path wasmFile,
+            String name,
+            Path targetResourceFolder,
+            Path targetSourceFolder,
+            List<String> targets) {
         this.wasmFile = wasmFile;
         this.name = name;
         this.targetResourceFolder = targetResourceFolder;
         this.targetSourceFolder = targetSourceFolder;
+        this.targets = targets;
     }
 
     public Path wasmFile() {
@@ -31,6 +40,10 @@ public final class Config {
 
     public Path targetSourceFolder() {
         return targetSourceFolder;
+    }
+
+    public List<String> targets() {
+        return targets;
     }
 
     @SuppressWarnings("StringSplitter")
@@ -58,6 +71,7 @@ public final class Config {
         private String name;
         private Path targetResourceFolder;
         private Path targetSourceFolder;
+        private List<String> targets;
 
         private Builder() {}
 
@@ -81,8 +95,15 @@ public final class Config {
             return this;
         }
 
+        public Builder withTargets(List<String> targets) {
+            this.targets = targets;
+            return this;
+        }
+
         public Config build() {
-            return new Config(wasmFile, name, targetResourceFolder, targetSourceFolder);
+            List<String> t =
+                    (targets != null && !targets.isEmpty()) ? targets : CraneliftTarget.ALL_TARGETS;
+            return new Config(wasmFile, name, targetResourceFolder, targetSourceFolder, t);
         }
     }
 }

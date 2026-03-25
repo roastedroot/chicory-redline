@@ -8,6 +8,7 @@ import com.dylibso.chicory.wasm.WasmWriter;
 import com.dylibso.chicory.wasm.types.OpCode;
 import com.dylibso.chicory.wasm.types.RawSection;
 import com.dylibso.chicory.wasm.types.SectionId;
+import io.roastedroot.cranelift.compiler.CraneliftTarget;
 import io.roastedroot.cranelift.compiler.NativeCodeSerializer;
 import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
 import java.io.ByteArrayOutputStream;
@@ -15,6 +16,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 public class Generator {
 
@@ -26,16 +33,60 @@ public class Generator {
 
     public void generateNativeCode() throws IOException {
         var module = Parser.parse(config.wasmFile());
+        var packagePath = config.getPackageName().replace('.', '/');
+        var baseName = config.getBaseName();
+        var targets = config.targets();
 
-        var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
+        var resourceDir = config.targetResourceFolder().resolve(packagePath);
+        Files.createDirectories(resourceDir);
+
+        if (targets.size() == 1) {
+            compileForTarget(targets.get(0), module, resourceDir, baseName);
+            return;
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(targets.size());
+        List<Future<?>> futures = new ArrayList<>();
+        try {
+            for (String triple : targets) {
+                futures.add(
+                        executor.submit(
+                                () -> {
+                                    try {
+                                        compileForTarget(triple, module, resourceDir, baseName);
+                                    } catch (IOException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                    return null;
+                                }));
+            }
+            for (Future<?> f : futures) {
+                f.get();
+            }
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof IOException) {
+                throw (IOException) e.getCause();
+            }
+            throw new IOException("Parallel compilation failed", e.getCause());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Compilation interrupted", e);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static void compileForTarget(
+            String triple,
+            com.dylibso.chicory.wasm.WasmModule module,
+            java.nio.file.Path resourceDir,
+            String baseName)
+            throws IOException {
+        var compiler = new NativeCompiler(triple, module);
         byte[][] compiledCode = compiler.compileAll();
 
-        var packagePath = config.getPackageName().replace('.', '/');
-        var nativeFile =
-                config.targetResourceFolder()
-                        .resolve(packagePath)
-                        .resolve(config.getBaseName() + ".native");
-        Files.createDirectories(nativeFile.getParent());
+        var suffix = CraneliftTarget.resourceSuffix(triple);
+        var nativeFile = resourceDir.resolve(baseName + "." + suffix + ".native");
 
         try (var out = new FileOutputStream(nativeFile.toFile())) {
             NativeCodeSerializer.serialize(compiledCode, out);
@@ -110,6 +161,7 @@ public class Generator {
                 + "import com.dylibso.chicory.runtime.Instance;\n"
                 + "import com.dylibso.chicory.wasm.Parser;\n"
                 + "import com.dylibso.chicory.wasm.WasmModule;\n"
+                + "import io.roastedroot.cranelift.compiler.CraneliftTarget;\n"
                 + "import io.roastedroot.cranelift.compiler.NativeCodeSerializer;\n"
                 + "import io.roastedroot.cranelift.runner.NativeMachineFactory;\n"
                 + "import java.io.IOException;\n"
@@ -148,12 +200,20 @@ public class Generator {
                 + "        static final byte[][] CODE;\n"
                 + "\n"
                 + "        static {\n"
+                + "            var suffix = CraneliftTarget.resourceSuffix(\n"
+                + "                    CraneliftTarget.detectHost());\n"
+                + "            var resource = \""
+                + baseName
+                + ".\" + suffix + \".native\";\n"
                 + "            try (InputStream in =\n"
                 + "                    "
                 + baseName
-                + ".class.getResourceAsStream(\""
-                + baseName
-                + ".native\")) {\n"
+                + ".class.getResourceAsStream(resource)) {\n"
+                + "                if (in == null) {\n"
+                + "                    throw new UnsupportedOperationException(\n"
+                + "                            \"No precompiled native code for platform: \"\n"
+                + "                                    + suffix);\n"
+                + "                }\n"
                 + "                CODE = NativeCodeSerializer.deserialize(in);\n"
                 + "            } catch (IOException e) {\n"
                 + "                throw new UncheckedIOException(\n"
