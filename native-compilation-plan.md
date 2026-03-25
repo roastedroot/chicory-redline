@@ -78,9 +78,10 @@ cranelift_bridge.wasm                   Pre-built Wasm binary (~5MB, root level)
 
 ## Current state
 
-**28023 tests, 0 failures, 0 errors, 103 skipped**. Requires Java 25 for runner.
+**28022 tests, 0 failures, 0 errors, 103 skipped**. Requires Java 25 for runner.
 Compiler module is Java 11 — usable by Maven plugin on any JDK >= 11.
-Platform: **x86_64 Linux only** (target triple hardcoded in NativeMachine).
+Cross-compilation: all 6 targets by default (Linux/macOS/Windows × x86_64/aarch64).
+CI: ubuntu x86_64, ubuntu arm64, macOS arm64, Windows x86_64.
 
 Public API (`io.roastedroot.cranelift.runner.NativeMachineFactory`):
 ```java
@@ -129,35 +130,6 @@ Native:        911,764 ops/s  (144x)   <- within 9% of JVM compiled
 ```
 
 ## Next priorities
-
-### P0: Cross-compilation for all targets
-
-**Next priority.** The compiler must produce native code for all platforms by default
-so that JARs work everywhere. Currently hardcoded to `x86_64-unknown-linux-gnu`.
-
-Default targets (compile all unless user restricts):
-- `x86_64-unknown-linux-gnu` (Linux x86_64)
-- `aarch64-unknown-linux-gnu` (Linux ARM64)
-- `x86_64-apple-darwin` (macOS x86_64)
-- `aarch64-apple-darwin` (macOS ARM64 / Apple Silicon)
-- `x86_64-pc-windows-msvc` (Windows x86_64)
-- `aarch64-pc-windows-msvc` (Windows ARM64)
-
-Cranelift ships with `x86` and `arm64` backends (Cargo.toml features). All 6
-targets use the same two backends — the triple determines calling convention
-(System V ABI on Linux/macOS, Windows ABI on Windows) and relocation model.
-
-Design:
-- [ ] Make target triple a parameter in NativeCompiler (currently hardcoded)
-- [ ] Generator compiles for ALL default targets, producing one `.native` per target
-- [ ] Resource naming: `Module.x86_64-linux.native`, `Module.aarch64-darwin.native`, etc.
-- [ ] Config/Maven plugin: `<targets>` list to restrict (e.g. only linux-x64 + mac-arm)
-- [ ] Runtime detection: `NativeMachineFactory` maps `os.name`+`os.arch` to the correct
-  `.native` resource and loads it automatically
-- [ ] Generated source: `NativeCodeHolder` loads the right resource for the current platform
-- [ ] NativeCodeSerializer: include target triple in the file header (version bump to 2)
-- [ ] Parallel: each target can compile independently (embarrassingly parallel with
-  per-target bridge instances)
 
 ### P1: Hybrid Machine — automatic threshold-based dispatch
 
@@ -255,6 +227,11 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
   per bridge instance (cranelift_bridge.wasm ByteArrayMemory).
 - **NativeMachineFactory cleanup**: `close()` now also closes the shared Arena
   as safety net (idempotent with NativeMachine's CleanupAction).
+- **Cross-compilation**: `CraneliftTarget` utility with 6 target triples,
+  `detectHost()` for runtime platform detection, `resourceSuffix()` for
+  resource naming. Generator compiles all targets in parallel, produces
+  per-platform `.native` files. Maven plugin accepts `<targets>` to restrict.
+  Generated code auto-detects platform and loads matching resource.
 
 ## How to build and test
 
