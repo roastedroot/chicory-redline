@@ -146,6 +146,24 @@ Tasks:
 - [ ] Functions with unsupported opcodes → fall back to Chicory AOT
 - [ ] Use hybrid mode to bisect sqlite4j2 codegen bug
 
+### P1: Windows support
+
+PanamaExecutor uses mmap/mprotect/munmap which don't exist on Windows.
+Need to implement equivalent using Windows API via Panama:
+- `VirtualAlloc` (reserve + commit) instead of mmap
+- `VirtualProtect` instead of mprotect
+- `VirtualFree` instead of munmap
+
+Cranelift already supports `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`
+targets (compilation works), but the runner can't execute native code on Windows
+until PanamaExecutor is ported.
+
+Tasks:
+- [ ] Add VirtualAlloc/VirtualProtect/VirtualFree downcall handles to PanamaExecutor
+- [ ] Detect OS at init, use mmap path on Linux/macOS, VirtualAlloc path on Windows
+- [ ] Add Windows targets back to CraneliftTarget.ALL_TARGETS
+- [ ] Re-enable windows-latest in CI matrix
+
 ### P1: Rust bridge cleanup
 
 - [ ] Guard `wasm_malloc(0)` — `std::alloc::alloc` with zero-sized layout is UB
