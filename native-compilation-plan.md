@@ -118,7 +118,7 @@ All skipped tests are assert_trap or validation tests. Zero happy-path failures.
 | bazel-wasm-repro (toml2json) | 237KB | PASS | 279 funcs, ~80s compilation |
 | jq4j | 951KB | FAIL (9/21) | 24 funcs missing atomic opcodes |
 | prism (Ruby parser) | 564KB | PASS | 10x faster than Chicory AOT, build-time compilation via Maven plugin |
-| sqlite4j2 | 849KB | WIP | Cranelift compilation succeeds, testing in progress |
+| sqlite4j2 | 849KB | PASS | 4x faster than Chicory AOT, build-time compilation via Maven plugin |
 
 ### Benchmark results (iterFact, input=1000)
 
@@ -198,6 +198,22 @@ Current float-to-int trunc only checks NaN (fcmp NE x,x). Need range check:
 `x < INT_MIN_as_float || x > INT_MAX_as_float -> trap`. Each trunc variant
 (i32/i64 x f32/f64 x signed/unsigned) has different range bounds.
 
+### P2: NativeMemory mmap reservation leak
+
+The mmap/mprotect approach reserves up to 4GB virtual address space per instance
+(PROT_NONE, no physical RAM committed). When instances are never explicitly
+closed (e.g. generated code creates factory as local var), the reservations
+accumulate. Cleaner fires on GC but GC doesn't feel off-heap pressure.
+
+Current mitigations:
+- NativeMachine CleanupAction calls nativeMemory.close() (deterministic if factory.close() called)
+- NativeMachineFactory.close() closes arena + machine
+- Cleaner as safety net for final cleanup
+
+Remaining issue: generated code and test infrastructure don't call close().
+Options: make generated code expose factory for closing, add Instance.close()
+to Chicory upstream, or use Arena.ofAuto() for GC-aware native memory tracking.
+
 ### P2: Native memory.copy/fill (optimization)
 
 Current memory.copy/fill go through Java trampoline (native -> upcall -> Java).
@@ -232,6 +248,13 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
 - **mmap/mprotect NativeMemory**: reserves full max address range upfront with
   `mmap(PROT_NONE)`, commits pages with `mprotect(PROT_READ|PROT_WRITE)`.
   `grow()` is zero-copy (just mprotect more range), base address never changes.
+  Cleaner-based munmap on GC + NativeMachine CleanupAction for deterministic chain.
+  Validated on sqlite4j2 (4x perf improvement, memory-grow-heavy workload).
+- **CraneliftBridge leak fix**: `compileAll()` now closes bridges via
+  try-with-resources after each compilation chunk. Prevents ~6MB on-heap leak
+  per bridge instance (cranelift_bridge.wasm ByteArrayMemory).
+- **NativeMachineFactory cleanup**: `close()` now also closes the shared Arena
+  as safety net (idempotent with NativeMachine's CleanupAction).
 
 ## How to build and test
 

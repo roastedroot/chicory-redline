@@ -258,10 +258,15 @@ public final class NativeMachine implements Machine {
             throw new ChicoryException("Failed to set up native code", e);
         }
 
-        // Register cleanup: close arena (frees all off-heap allocations + upcall stubs)
-        // and munmap the executable code region. Runs on explicit close() or when GC'd.
+        // Capture NativeMemory for cleanup (munmap the reserved 4GB region)
+        NativeMemory nativeMemory = instance.memory() instanceof NativeMemory nm ? nm : null;
+
+        // Register cleanup: close arena (frees all off-heap allocations + upcall stubs),
+        // munmap the executable code region, and munmap the NativeMemory reservation.
+        // Runs on explicit close() or when GC'd.
         this.cleanable =
-                CLEANER.register(this, new CleanupAction(arena, codeRegion, codeRegionSize));
+                CLEANER.register(
+                        this, new CleanupAction(arena, codeRegion, codeRegionSize, nativeMemory));
     }
 
     /** Explicitly release all native resources (arena + code region). Idempotent. */
@@ -269,10 +274,14 @@ public final class NativeMachine implements Machine {
         cleanable.clean();
     }
 
-    private record CleanupAction(Arena arena, MemorySegment codeRegion, long codeRegionSize)
+    private record CleanupAction(
+            Arena arena, MemorySegment codeRegion, long codeRegionSize, NativeMemory nativeMemory)
             implements Runnable {
         @Override
         public void run() {
+            if (nativeMemory != null) {
+                nativeMemory.close();
+            }
             try {
                 arena.close();
             } catch (IllegalStateException e) {

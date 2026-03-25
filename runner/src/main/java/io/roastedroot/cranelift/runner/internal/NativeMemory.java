@@ -12,6 +12,7 @@ import com.dylibso.chicory.wasm.types.MemoryLimits;
 import com.dylibso.chicory.wasm.types.PassiveDataSegment;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.ref.Cleaner;
 import java.nio.ByteOrder;
 
 /**
@@ -21,14 +22,30 @@ import java.nio.ByteOrder;
  * memory committed), then mprotects pages as needed. Grow is zero-copy — just
  * mprotect the next range. The base address never changes.
  */
-public final class NativeMemory implements Memory {
+public final class NativeMemory implements Memory, AutoCloseable {
+
+    private static final Cleaner CLEANER = Cleaner.create();
 
     private final MemoryLimits limits;
-    private final MemorySegment reserved; // full reserved range (PROT_NONE)
-    private MemorySegment segment; // accessible slice (PROT_READ|PROT_WRITE)
+    private final MemorySegment reserved;
+    private MemorySegment segment;
     private int nPages;
     private final long reservedSize;
+    private final Cleaner.Cleanable cleanable;
     private DataSegment[] dataSegments;
+
+    private record CleanupAction(MemorySegment reserved, long reservedSize) implements Runnable {
+        @Override
+        public void run() {
+            if (reservedSize > 0) {
+                try {
+                    PanamaExecutor.munmap(reserved, reservedSize);
+                } catch (Throwable e) {
+                    // ignore cleanup errors
+                }
+            }
+        }
+    }
 
     public NativeMemory(MemoryLimits limits) {
         this.limits = limits;
@@ -37,10 +54,8 @@ public final class NativeMemory implements Memory {
         this.reservedSize = PAGE_SIZE * (long) maxPages;
 
         try {
-            // Reserve full address range with no access
             this.reserved = PanamaExecutor.mmapNoAccess(reservedSize);
 
-            // Commit initial pages as read/write
             if (nPages > 0) {
                 PanamaExecutor.mprotectReadWrite(reserved, PAGE_SIZE * (long) nPages);
             }
@@ -49,6 +64,13 @@ public final class NativeMemory implements Memory {
         }
 
         this.segment = reserved.reinterpret(PAGE_SIZE * (long) nPages);
+        this.cleanable = CLEANER.register(this, new CleanupAction(reserved, reservedSize));
+    }
+
+    /** Explicitly release the mmap'd memory region. Idempotent. */
+    @Override
+    public void close() {
+        cleanable.clean();
     }
 
     /** Get the native address of the memory buffer, for passing to native code. */
@@ -70,7 +92,6 @@ public final class NativeMemory implements Memory {
         }
 
         try {
-            // mprotect the new range — no copy needed, address stays stable
             long newSize = PAGE_SIZE * (long) numPages;
             PanamaExecutor.mprotectReadWrite(reserved, newSize);
             this.segment = reserved.reinterpret(newSize);

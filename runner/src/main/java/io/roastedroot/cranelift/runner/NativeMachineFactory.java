@@ -113,5 +113,10 @@ public final class NativeMachineFactory implements AutoCloseable {
         if (nativeMachine != null) {
             nativeMachine.close();
         }
+        try {
+            arena.close();
+        } catch (IllegalStateException e) {
+            // ignore — may already be closed by NativeMachine's CleanupAction
+        }
     }
 }

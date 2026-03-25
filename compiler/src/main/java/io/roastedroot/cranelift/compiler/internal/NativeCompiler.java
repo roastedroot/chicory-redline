@@ -167,20 +167,21 @@ public final class NativeCompiler {
             futures.add(
                     POOL.submit(
                             () -> {
-                                var threadBridge = new CraneliftBridge();
-                                threadBridge.init(triple);
-                                var threadCompiler =
-                                        new NativeCompiler(threadBridge, triple, module);
-                                for (int i = start; i < end; i++) {
-                                    try {
-                                        results[i] = threadCompiler.compileFunction(i);
-                                    } catch (RuntimeException e) {
-                                        throw new ChicoryException(
-                                                "Failed to compile function "
-                                                        + i
-                                                        + ": "
-                                                        + e.getMessage(),
-                                                e);
+                                try (var threadBridge = new CraneliftBridge()) {
+                                    threadBridge.init(triple);
+                                    var threadCompiler =
+                                            new NativeCompiler(threadBridge, triple, module);
+                                    for (int i = start; i < end; i++) {
+                                        try {
+                                            results[i] = threadCompiler.compileFunction(i);
+                                        } catch (RuntimeException e) {
+                                            throw new ChicoryException(
+                                                    "Failed to compile function "
+                                                            + i
+                                                            + ": "
+                                                            + e.getMessage(),
+                                                    e);
+                                        }
                                     }
                                 }
                                 return null;
