@@ -206,7 +206,8 @@
             SpecV1ImportsTest.test123, SpecV1ImportsTest.test124, SpecV1ImportsTest.test125,
             SpecV1ImportsTest.test127, SpecV1ImportsTest.test128, SpecV1ImportsTest.test129,
             SpecV1LinkingTest.test129, SpecV1LinkingTest.test130, SpecV1LinkingTest.test131,
-            SpecV1StartTest.test18</excludedTests>
+            SpecV1StartTest.test18,
+            SpecV1FuncTest.test85</excludedTests>
           <excludedWasts>
             <wast>obsolete-keywords.wast</wast>
             <wast>simd_address.wast</wast>

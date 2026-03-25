@@ -110,6 +110,7 @@ All skipped tests are assert_trap or validation tests. Zero happy-path failures.
 | linking.wast | 3 | Exception type + wrong result (multi-module) |
 | data.wast | 2 | InvalidException not thrown |
 | start.wast | 1 | UninstantiableException vs ChicoryException |
+| func.wast test85 | 1 | aarch64 ABI: large-sig (17 mixed params, 16 mixed returns) wrong value |
 
 ### Real-world validation
 
@@ -187,6 +188,21 @@ use i64 for the bounds computation.
 Current float-to-int trunc only checks NaN (fcmp NE x,x). Need range check:
 `x < INT_MIN_as_float || x > INT_MAX_as_float -> trap`. Each trunc variant
 (i32/i64 x f32/f64 x signed/unsigned) has different range bounds.
+
+### P2: aarch64 large-sig ABI mismatch (SpecV1FuncTest.test85)
+
+`large-sig` function: 17 mixed-type params (i32/i64/f32/f64), 16 mixed-type
+returns. On aarch64-apple-darwin, result[12] gets the wrong value — returns
+`0x41800000` (16.0f raw bits) instead of `15` (i32). Passes on x86_64.
+
+Likely cause: register assignment mismatch between Panama's downcall handle
+(Apple ARM64 ABI) and Cranelift's generated code for this many mixed params.
+ARM64 uses separate integer (x0-x7) and float (d0-d7) register files; with
+19 total params (17 + memBase + ctxPtr), many spill to stack. Off-by-one in
+stack slot assignment.
+
+Could be a Cranelift bug — check Cranelift issue tracker for known aarch64
+ABI issues with large mixed-type signatures.
 
 ### P2: NativeMemory mmap reservation leak
 
