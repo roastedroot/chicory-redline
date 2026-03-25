@@ -141,13 +141,15 @@ public final class NativeCompiler {
 
     // --- Compilation ---
 
-    private static final ExecutorService POOL =
-            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    private static final int THREAD_COUNT =
+            Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
+
+    private static final ExecutorService POOL = Executors.newFixedThreadPool(THREAD_COUNT);
 
     public byte[][] compileAll() {
         int count = module.codeSection().functionBodyCount();
         byte[][] results = new byte[count][];
-        int threads = Math.min(Runtime.getRuntime().availableProcessors(), count);
+        int threads = Math.min(THREAD_COUNT, count);
         if (threads < 1) {
             threads = 1;
         }

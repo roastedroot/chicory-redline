@@ -10,33 +10,45 @@ import com.dylibso.chicory.wasm.types.ActiveDataSegment;
 import com.dylibso.chicory.wasm.types.DataSegment;
 import com.dylibso.chicory.wasm.types.MemoryLimits;
 import com.dylibso.chicory.wasm.types.PassiveDataSegment;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 
 /**
- * Off-heap contiguous Memory implementation backed by Panama MemorySegment.
- * The address is stable and can be passed directly to native code.
+ * Off-heap contiguous Memory backed by mmap/mprotect.
  *
- * <p>Users must use this Memory type with NativeMachine. If the module defines
- * memory, create a NativeMemory and pass it via ImportMemory.
+ * <p>Reserves the full maximum address range upfront with PROT_NONE (no physical
+ * memory committed), then mprotects pages as needed. Grow is zero-copy — just
+ * mprotect the next range. The base address never changes.
  */
 public final class NativeMemory implements Memory {
 
     private final MemoryLimits limits;
-    private final Arena arena;
-    private MemorySegment segment;
+    private final MemorySegment reserved; // full reserved range (PROT_NONE)
+    private MemorySegment segment; // accessible slice (PROT_READ|PROT_WRITE)
     private int nPages;
+    private final long reservedSize;
     private DataSegment[] dataSegments;
 
     public NativeMemory(MemoryLimits limits) {
         this.limits = limits;
         this.nPages = limits.initialPages();
-        this.arena = Arena.ofShared();
-        this.segment = arena.allocate(PAGE_SIZE * (long) nPages, 8);
-        // Zero-initialize
-        segment.fill((byte) 0);
+        int maxPages = Math.min(limits.maximumPages(), RUNTIME_MAX_PAGES);
+        this.reservedSize = PAGE_SIZE * (long) maxPages;
+
+        try {
+            // Reserve full address range with no access
+            this.reserved = PanamaExecutor.mmapNoAccess(reservedSize);
+
+            // Commit initial pages as read/write
+            if (nPages > 0) {
+                PanamaExecutor.mprotectReadWrite(reserved, PAGE_SIZE * (long) nPages);
+            }
+        } catch (Throwable t) {
+            throw new ChicoryException("Failed to mmap native memory", t);
+        }
+
+        this.segment = reserved.reinterpret(PAGE_SIZE * (long) nPages);
     }
 
     /** Get the native address of the memory buffer, for passing to native code. */
@@ -56,12 +68,17 @@ public final class NativeMemory implements Memory {
         if (numPages > maximumPages() || numPages < prevPages) {
             return -1;
         }
-        var newSegment = arena.allocate(PAGE_SIZE * (long) numPages, 8);
-        MemorySegment.copy(segment, 0, newSegment, 0, PAGE_SIZE * (long) prevPages);
-        // Zero new pages
-        newSegment.asSlice(PAGE_SIZE * (long) prevPages).fill((byte) 0);
-        segment = newSegment;
-        nPages = numPages;
+
+        try {
+            // mprotect the new range — no copy needed, address stays stable
+            long newSize = PAGE_SIZE * (long) numPages;
+            PanamaExecutor.mprotectReadWrite(reserved, newSize);
+            this.segment = reserved.reinterpret(newSize);
+            this.nPages = numPages;
+        } catch (Throwable t) {
+            return -1;
+        }
+
         return prevPages;
     }
 

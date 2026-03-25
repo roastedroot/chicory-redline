@@ -118,7 +118,7 @@ All skipped tests are assert_trap or validation tests. Zero happy-path failures.
 | bazel-wasm-repro (toml2json) | 237KB | PASS | 279 funcs, ~80s compilation |
 | jq4j | 951KB | FAIL (9/21) | 24 funcs missing atomic opcodes |
 | prism (Ruby parser) | 564KB | PASS | 10x faster than Chicory AOT, build-time compilation via Maven plugin |
-| sqlite4j2 | 849KB | FAIL | Data-dependent codegen bug, parked until hybrid machine |
+| sqlite4j2 | 849KB | WIP | Cranelift compilation succeeds, testing in progress |
 
 ### Benchmark results (iterFact, input=1000)
 
@@ -129,15 +129,6 @@ Native:        911,764 ops/s  (144x)   <- within 9% of JVM compiled
 ```
 
 ## Next priorities
-
-### P1: Module split — compiler (Java 11) + runner (Java 25) — DONE
-
-Split into compiler (Java 11, pure compilation) and runner (Java 25, Panama FFM).
-Maven plugin and build-time compiler now work on any JDK >= 11.
-
-- [x] Split compiler/ into compiler/ (Java 11) + runner/ (Java 25)
-- [ ] Maven plugin for build-time Cranelift compilation (scaffolding done)
-- [ ] Documentation / quickstart for user projects
 
 ### P0: Cross-compilation for all targets
 
@@ -182,26 +173,6 @@ Tasks:
 - [ ] Functions above threshold → Cranelift (native)
 - [ ] Functions with unsupported opcodes → fall back to Chicory AOT
 - [ ] Use hybrid mode to bisect sqlite4j2 codegen bug
-
-### P1: Parallel compilation
-
-Cranelift compilation is slow for large modules (~80s for 279 funcs in toml2json).
-Parallelizing across functions would give near-linear speedup on multi-core machines.
-
-**Key constraint**: Chicory `Instance` is NOT thread-safe. The `CraneliftBridge` wraps
-a single Chicory instance of cranelift_bridge.wasm, so it cannot be shared across
-threads. Each thread needs its own bridge instance.
-
-Design:
-- [ ] Create one `CraneliftBridge` per thread (each instantiates cranelift_bridge.wasm)
-- [ ] Partition functions across N threads (N = available cores)
-- [ ] Each thread compiles its partition sequentially using its own bridge
-- [ ] Collect `byte[][]` results into the shared array (each slot written by exactly one thread)
-- [ ] Use `ExecutorService` / `ForkJoinPool` for thread management
-- [ ] Bridge instantiation (~2s each) is amortized across many functions
-
-Estimated speedup: ~4-8x on typical developer machines. Bridge init cost (~2s × N threads)
-is acceptable when total compilation is 60-120s.
 
 ### P1: Rust bridge cleanup
 
@@ -249,6 +220,18 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
 - **Module split**: compiler (Java 11) + runner (Java 25). Compiler has no Panama
   dependency — usable by Maven plugin on any JDK >= 11. NativeEmitters converted
   to Java 11 syntax (no switch expressions, no instanceof patterns, no Stream.toList)
+- **Maven plugin**: build-time compilation via `cranelift-compiler-maven-plugin`.
+  Generates `.native` (serialized machine code) + `.meta` (stripped wasm) +
+  Java source wrapper. Validated on prism (564KB wasm, 10x faster than Chicory AOT).
+- **Eager block sealing**: seal BLOCK/IF/ELSE merge blocks immediately after all
+  predecessors are known, matching wasmtime. Fixes SSA builder panic when
+  `use_var` is called on unsealed blocks with multiple predecessors.
+- **Parallel compilation**: `compileAll()` partitions functions across
+  `availableProcessors()/2` threads, each with its own CraneliftBridge instance.
+  Shared static thread pool avoids resource exhaustion under concurrent use.
+- **mmap/mprotect NativeMemory**: reserves full max address range upfront with
+  `mmap(PROT_NONE)`, commits pages with `mprotect(PROT_READ|PROT_WRITE)`.
+  `grow()` is zero-copy (just mprotect more range), base address never changes.
 
 ## How to build and test
 

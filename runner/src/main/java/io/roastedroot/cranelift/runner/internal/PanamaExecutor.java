@@ -81,6 +81,28 @@ final class PanamaExecutor {
         }
     }
 
+    /** Reserve address space with no access (PROT_NONE). */
+    static MemorySegment mmapNoAccess(long size) throws Throwable {
+        MemorySegment addr =
+                (MemorySegment)
+                        MMAP.invokeExact(
+                                MemorySegment.NULL,
+                                size,
+                                0, // PROT_NONE
+                                MAP_PRIVATE | MAP_ANONYMOUS,
+                                -1,
+                                0L);
+        return addr.reinterpret(size);
+    }
+
+    /** Make a range readable and writable. */
+    static void mprotectReadWrite(MemorySegment addr, long size) throws Throwable {
+        int result = (int) MPROTECT.invokeExact(addr, size, PROT_READ | PROT_WRITE);
+        if (result != 0) {
+            throw new RuntimeException("mprotect failed: " + result);
+        }
+    }
+
     /** Unmap a memory region. */
     static void munmap(MemorySegment addr, long size) throws Throwable {
         int result = (int) MUNMAP.invokeExact(addr, size);
