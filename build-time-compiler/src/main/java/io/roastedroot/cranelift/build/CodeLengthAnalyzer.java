@@ -16,7 +16,7 @@ import org.objectweb.asm.Opcodes;
  */
 final class CodeLengthAnalyzer {
 
-    static final int HUGE_METHOD_LIMIT = 8000;
+    static final int DEFAULT_HUGE_METHOD_LIMIT = 8000;
 
     private CodeLengthAnalyzer() {}
 

@@ -64,13 +64,25 @@
         <version>${project.version}</version>
         <executions>
           <execution>
-            <id>compile-toml2json</id>
+            <id>threshold-8000</id>
             <goals>
               <goal>compile</goal>
             </goals>
             <configuration>
               <name>io.roastedroot.cranelift.bench.Toml2JsonModule</name>
               <wasmFile>${project.basedir}/../wasm/toml2json.wasm</wasmFile>
+              <threshold>8000</threshold>
+            </configuration>
+          </execution>
+          <execution>
+            <id>threshold-0</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <name>io.roastedroot.cranelift.bench.Toml2JsonAllNative</name>
+              <wasmFile>${project.basedir}/../wasm/toml2json.wasm</wasmFile>
+              <threshold>0</threshold>
             </configuration>
           </execution>
         </executions>

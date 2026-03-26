@@ -142,8 +142,9 @@ public class Generator {
                 isNative[funcId] = true;
             }
         }
+        int threshold = config.hugeMethodThreshold();
         for (Map.Entry<Integer, Integer> entry : funcCodeLengths.entrySet()) {
-            if (entry.getValue() >= CodeLengthAnalyzer.HUGE_METHOD_LIMIT) {
+            if (entry.getValue() >= threshold) {
                 isNative[entry.getKey()] = true;
             }
         }
@@ -164,7 +165,7 @@ public class Generator {
                         + " imports, "
                         + nativeCount
                         + " native [code_length >= "
-                        + CodeLengthAnalyzer.HUGE_METHOD_LIMIT
+                        + threshold
                         + "], "
                         + bytecodeCount
                         + " bytecode)");

@@ -18,11 +18,13 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
 /**
- * Compares safe (Chicory bytecode) vs fast (hybrid native+bytecode) execution of toml2json — a
- * real-world 237KB Wasm module with 279 functions.
+ * Compares execution modes for toml2json (237KB, 279 functions):
  *
- * <p>Allocates input/output buffers once in setup and reuses them across calls to avoid exhausting
- * the wasm linear memory (the allocator grows pages with no deallocation).
+ * <ul>
+ *   <li>safe — pure Chicory bytecode
+ *   <li>fast — hybrid: 3 native (code_length >= 8000) + 276 bytecode
+ *   <li>allNative — all 279 functions via Cranelift native (threshold=0)
+ * </ul>
  *
  * <p>Run from the repo root: {@code jmh/run.sh}
  */
@@ -47,7 +49,6 @@ public class BenchmarkToml2Json {
     @State(Scope.Thread)
     public static class SafeState {
         Instance instance;
-        ExportFunction allocate;
         ExportFunction toml2json;
         int inPtr;
         int outPtr;
@@ -56,9 +57,8 @@ public class BenchmarkToml2Json {
         @Setup(Level.Trial)
         public void setup() {
             instance = Toml2JsonModule.safe().build();
-            allocate = instance.export("allocate");
+            var allocate = instance.export("allocate");
             toml2json = instance.export("toml2json");
-            // Pre-allocate buffers once — reused across all calls
             inPtr = (int) allocate.apply(TOML_BYTES.length, 0)[0];
             outPtr = (int) allocate.apply(4, 0)[0];
             outLen = (int) allocate.apply(4, 0)[0];
@@ -68,7 +68,6 @@ public class BenchmarkToml2Json {
     @State(Scope.Thread)
     public static class FastState {
         Instance instance;
-        ExportFunction allocate;
         ExportFunction toml2json;
         int inPtr;
         int outPtr;
@@ -77,7 +76,26 @@ public class BenchmarkToml2Json {
         @Setup(Level.Trial)
         public void setup() {
             instance = Toml2JsonModule.fast().build();
-            allocate = instance.export("allocate");
+            var allocate = instance.export("allocate");
+            toml2json = instance.export("toml2json");
+            inPtr = (int) allocate.apply(TOML_BYTES.length, 0)[0];
+            outPtr = (int) allocate.apply(4, 0)[0];
+            outLen = (int) allocate.apply(4, 0)[0];
+        }
+    }
+
+    @State(Scope.Thread)
+    public static class AllNativeState {
+        Instance instance;
+        ExportFunction toml2json;
+        int inPtr;
+        int outPtr;
+        int outLen;
+
+        @Setup(Level.Trial)
+        public void setup() {
+            instance = Toml2JsonAllNative.fast().build();
+            var allocate = instance.export("allocate");
             toml2json = instance.export("toml2json");
             inPtr = (int) allocate.apply(TOML_BYTES.length, 0)[0];
             outPtr = (int) allocate.apply(4, 0)[0];
@@ -87,32 +105,27 @@ public class BenchmarkToml2Json {
 
     @Benchmark
     @BenchmarkMode(Mode.Throughput)
-    public void benchmarkSafe(SafeState s, Blackhole bh) {
-        bh.consume(convert(s));
+    public void safe(SafeState s, Blackhole bh) {
+        bh.consume(convert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen));
     }
 
     @Benchmark
     @BenchmarkMode(Mode.Throughput)
-    public void benchmarkFast(FastState s, Blackhole bh) {
-        bh.consume(convert(s));
+    public void fast(FastState s, Blackhole bh) {
+        bh.consume(convert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen));
     }
 
-    private static byte[] convert(SafeState s) {
-        return doConvert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen);
+    @Benchmark
+    @BenchmarkMode(Mode.Throughput)
+    public void allNative(AllNativeState s, Blackhole bh) {
+        bh.consume(convert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen));
     }
 
-    private static byte[] convert(FastState s) {
-        return doConvert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen);
-    }
-
-    private static byte[] doConvert(
+    private static byte[] convert(
             Instance instance, ExportFunction toml2json, int inPtr, int outPtr, int outLen) {
         var memory = instance.memory();
-        // Write input (same buffer, overwritten each time)
         memory.write(inPtr, TOML_BYTES);
-        // Call toml2json (writes result ptr/len to outPtr/outLen)
         toml2json.apply(inPtr, TOML_BYTES.length, outPtr, outLen);
-        // Read result
         int resultPtr = memory.readInt(outPtr);
         int resultLen = memory.readInt(outLen);
         return memory.readBytes(resultPtr, resultLen);
