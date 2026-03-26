@@ -56,7 +56,9 @@ fn wasm_type_to_clif(ty: u32) -> cranelift_codegen::ir::Type {
 
 /// Get the active FunctionBuilder.
 fn b() -> &'static mut FunctionBuilder<'static> {
-    unsafe { &mut *SESSION.as_ref().unwrap().builder }
+    let session = unsafe { SESSION.as_ref().expect("No active session") };
+    assert!(!session.builder.is_null(), "Builder used after compile()");
+    unsafe { &mut *session.builder }
 }
 
 /// Get the session.
@@ -68,12 +70,18 @@ fn s() -> &'static mut Session {
 
 #[no_mangle]
 pub extern "C" fn wasm_malloc(size: u32) -> *mut u8 {
+    if size == 0 {
+        return 8 as *mut u8; // Return aligned dangling pointer for zero-sized alloc
+    }
     let layout = std::alloc::Layout::from_size_align(size as usize, 8).unwrap();
     unsafe { std::alloc::alloc(layout) }
 }
 
 #[no_mangle]
 pub extern "C" fn wasm_free(ptr: *mut u8, size: u32) {
+    if size == 0 {
+        return; // No-op for zero-sized alloc (matches wasm_malloc guard)
+    }
     let layout = std::alloc::Layout::from_size_align(size as usize, 8).unwrap();
     unsafe { std::alloc::dealloc(ptr, layout) }
 }
@@ -1416,6 +1424,16 @@ pub extern "C" fn compile() -> u32 {
         .expect("Compilation failed");
 
     let code = compiled.code_buffer();
+
+    // Clear session vecs to free memory between compilations
+    session.blocks.clear();
+    session.variables.clear();
+    session.values.clear();
+    session.sig_refs.clear();
+    session.call_args.clear();
+    session.jump_tables.clear();
+    session.br_table_targets.clear();
+
     unsafe {
         COMPILED_CODE = code.to_vec();
         COMPILED_CODE.len() as u32
