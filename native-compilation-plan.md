@@ -161,6 +161,28 @@ Hybrid dispatch (3 native hot-path functions) achieves 95% of all-native perform
 
 ## Next priorities
 
+### P0: Cross-boundary dispatch for internal calls
+
+Currently, once execution enters a machine (native or bytecode) via the
+HybridMachine entry-point dispatch, ALL internal function-to-function calls
+stay within that machine. Native direct CALLs go through funcTable (always
+native), and bytecode calls go through lookupswitch (always bytecode).
+
+This means a large native function calling a small function runs that small
+function natively too, missing the HotSpot JIT optimization it would get
+via bytecode. The hybrid dispatch only affects top-level exported function
+calls from Java — not internal wasm call chains.
+
+Root cause: native direct CALLs pass arguments via CPU registers (System V
+ABI). A bridge stub at funcTable[target] would need to marshal register args
+back to Java, but the current `importDispatchDirect` reads from ctxBuffer
+(only written for imports, not for function-to-function calls).
+
+To fix: modify the Cranelift emitter to emit ctxBuffer-based arg passing
+for calls to non-native targets (requires knowing the dispatch map at
+Cranelift compile time), or implement a Panama upcall stub that correctly
+captures register arguments and forwards them to the bytecode machine.
+
 ### P1: Windows support
 
 PanamaExecutor uses mmap/mprotect/munmap which don't exist on Windows.

@@ -235,6 +235,27 @@ public final class NativeMachine implements Machine {
                 downcalls[funcId] = null; // imports dispatch through call() directly
             }
 
+            // For uncompiled functions, create per-signature safety stubs
+            for (int i = 0; i < compiledCode.length; i++) {
+                if (compiledCode[i] == null) {
+                    int funcId = numImports + i;
+                    var funcType =
+                            (FunctionType)
+                                    module.typeSection()
+                                            .getType(module.functionSection().getFunctionType(i));
+                    try {
+                        MemorySegment stub = createImportStub(funcId, funcType);
+                        funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, stub.address());
+                    } catch (RuntimeException e) {
+                        System.err.println(
+                                "WARNING: Safety stub failed for func "
+                                        + funcId
+                                        + ": "
+                                        + e.getMessage());
+                        // Leave funcTable entry as 0 — will throw from call() if invoked
+                    }
+                }
+            }
         } catch (Throwable e) {
             throw new ChicoryException("Failed to set up native code", e);
         }
@@ -443,8 +464,8 @@ public final class NativeMachine implements Machine {
     }
 
     /**
-     * Dispatches an import function call. Reads args from ctxBuffer.
-     * Called by import upcall stubs.
+     * Dispatches a function call. Reads args from ctxBuffer.
+     * Called by import upcall stubs and uncompiled function safety stubs.
      */
     @SuppressWarnings("unused")
     private long importDispatchDirect(int funcId) {
@@ -454,9 +475,14 @@ public final class NativeMachine implements Machine {
             for (int i = 0; i < argCount; i++) {
                 args[i] = argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(i));
             }
-            var importFunc = instance.imports().function(funcId);
-            long[] result = importFunc.handle().apply(instance, args);
-            return (result != null && result.length > 0) ? result[0] : 0L;
+            if (funcId < numImports) {
+                var importFunc = instance.imports().function(funcId);
+                long[] result = importFunc.handle().apply(instance, args);
+                return (result != null && result.length > 0) ? result[0] : 0L;
+            } else {
+                // Uncompiled module function — throw
+                throw new ChicoryException("Function " + funcId + " not compiled");
+            }
         } catch (Throwable t) {
             pendingException = t;
             return 0L;
