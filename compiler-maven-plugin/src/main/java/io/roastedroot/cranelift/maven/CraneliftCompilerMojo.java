@@ -69,9 +69,9 @@ public class CraneliftCompilerMojo extends AbstractMojo {
         var generator = new Generator(config);
 
         try {
+            generator.generateBytecodeAndDispatch();
             generator.generateNativeCode();
             generator.generateMetaWasm();
-            generator.generateBytecodeAndDispatch();
             generator.generateSources();
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to compile native code", e);

@@ -147,6 +147,15 @@ public final class NativeCompiler {
     private static final ExecutorService POOL = Executors.newFixedThreadPool(THREAD_COUNT);
 
     public byte[][] compileAll() {
+        return compileAll(null);
+    }
+
+    /**
+     * Compiles functions to native code. If {@code filter} is non-null, only
+     * functions where {@code filter[numImports + bodyIndex]} is {@code true}
+     * are compiled; others get {@code null} entries.
+     */
+    public byte[][] compileAll(boolean[] filter) {
         int count = module.codeSection().functionBodyCount();
         byte[][] results = new byte[count][];
         int threads = Math.min(THREAD_COUNT, count);
@@ -172,6 +181,9 @@ public final class NativeCompiler {
                                     var threadCompiler =
                                             new NativeCompiler(threadBridge, triple, module);
                                     for (int i = start; i < end; i++) {
+                                        if (filter != null && !filter[numImports + i]) {
+                                            continue;
+                                        }
                                         try {
                                             results[i] = threadCompiler.compileFunction(i);
                                         } catch (RuntimeException e) {

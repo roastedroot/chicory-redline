@@ -36,6 +36,7 @@ public class Generator {
 
     private final Config config;
     private String bytecodeMainClass;
+    private boolean[] dispatchFilter;
 
     public Generator(Config config) {
         this.config = config;
@@ -51,7 +52,7 @@ public class Generator {
         Files.createDirectories(resourceDir);
 
         if (targets.size() == 1) {
-            compileForTarget(targets.get(0), module, resourceDir, baseName);
+            compileForTarget(targets.get(0), module, resourceDir, baseName, null);
             return;
         }
 
@@ -63,7 +64,8 @@ public class Generator {
                         executor.submit(
                                 () -> {
                                     try {
-                                        compileForTarget(triple, module, resourceDir, baseName);
+                                        compileForTarget(
+                                                triple, module, resourceDir, baseName, null);
                                     } catch (IOException e) {
                                         throw new RuntimeException(e);
                                     }
@@ -90,10 +92,11 @@ public class Generator {
             String triple,
             com.dylibso.chicory.wasm.WasmModule module,
             java.nio.file.Path resourceDir,
-            String baseName)
+            String baseName,
+            boolean[] filter)
             throws IOException {
         var compiler = new NativeCompiler(triple, module);
-        byte[][] compiledCode = compiler.compileAll();
+        byte[][] compiledCode = compiler.compileAll(filter);
 
         var suffix = CraneliftTarget.resourceSuffix(triple);
         var nativeFile = resourceDir.resolve(baseName + "." + suffix + ".native");
@@ -170,6 +173,9 @@ public class Generator {
                         + "], "
                         + bytecodeCount
                         + " bytecode)");
+
+        // Store dispatch filter for selective Cranelift compilation
+        this.dispatchFilter = isNative;
 
         // Write compiled .class files directly to resource directory
         this.bytecodeMainClass = collector.mainClassName();

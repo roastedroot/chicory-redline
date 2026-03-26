@@ -62,8 +62,22 @@ public final class HybridMachineFactory implements AutoCloseable {
 
     public Machine compile(Instance instance) {
         NativeMachine nativeMachine = (NativeMachine) nativeFactory.compile(instance);
+        // Only create bytecode machine if some functions are dispatched to it
+        boolean needsBytecode = false;
+        for (int i = numImports; i < isNativeFunction.length; i++) {
+            if (!isNativeFunction[i]) {
+                needsBytecode = true;
+                break;
+            }
+        }
+        if (!needsBytecode) {
+            return nativeMachine;
+        }
         Machine bytecodeMachine = bytecodeFactory.apply(instance);
-        return new HybridMachine(nativeMachine, bytecodeMachine, isNativeFunction, numImports);
+        var hybrid =
+                new HybridMachine(nativeMachine, bytecodeMachine, isNativeFunction, numImports);
+        nativeMachine.setDelegate(hybrid);
+        return hybrid;
     }
 
     public TableInstance createTable(Table table, int initValue) {
