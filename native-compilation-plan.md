@@ -173,6 +173,9 @@ IT tests pass (toml2json). Need to validate on sqlite4j2 — "uninitialized
 element" trap when integrating cranelift-compiler-maven-plugin. May be a
 table element segment initialization issue with NativeTable.
 
+Last known-good commit for sqlite4j2: `b2c5de5` (pre-hybrid, direct
+NativeMachineFactory). Bisect from there to find the regression.
+
 ### P1: Windows support
 
 PanamaExecutor uses mmap/mprotect/munmap which don't exist on Windows.
