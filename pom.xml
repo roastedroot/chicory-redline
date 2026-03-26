@@ -34,6 +34,8 @@
     <module>build-time-compiler</module>
     <module>compiler</module>
     <module>compiler-maven-plugin</module>
+    <module>integration-tests</module>
+    <module>jmh</module>
     <module>runner</module>
   </modules>
 

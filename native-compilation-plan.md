@@ -145,7 +145,6 @@ Tasks:
 - [ ] Functions below threshold → Chicory AOT (JVM bytecode)
 - [ ] Functions above threshold → Cranelift (native)
 - [ ] Functions with unsupported opcodes → fall back to Chicory AOT
-- [ ] Use hybrid mode to bisect sqlite4j2 codegen bug
 
 ### P1: Windows support
 
@@ -236,6 +235,12 @@ Tasks:
 - [ ] Generated code already throws `UnsupportedOperationException` if the
   `.native` resource is missing — verify this is clear and actionable
 - [ ] Keep runtime compilation only for tests (NativeInstanceBuilder)
+
+### P3: Move generated source code to JavaParser
+
+Currently `Generator.generateSourceCode()` uses string concatenation to produce
+the generated Java source. Migrate to JavaParser for maintainability and
+type-safety.
 
 ### P2: Native memory.copy/fill (optimization)
 

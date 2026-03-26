@@ -3,8 +3,13 @@ package io.roastedroot.cranelift.build;
 import static com.dylibso.chicory.wasm.Encoding.readVarUInt32;
 import static com.dylibso.chicory.wasm.WasmWriter.writeVarUInt32;
 
+import com.dylibso.chicory.compiler.InterpreterFallback;
+import com.dylibso.chicory.compiler.internal.ClassLoadingCollector;
+import com.dylibso.chicory.compiler.internal.Compiler;
 import com.dylibso.chicory.wasm.Parser;
+import com.dylibso.chicory.wasm.WasmModule;
 import com.dylibso.chicory.wasm.WasmWriter;
+import com.dylibso.chicory.wasm.types.ExternalType;
 import com.dylibso.chicory.wasm.types.OpCode;
 import com.dylibso.chicory.wasm.types.RawSection;
 import com.dylibso.chicory.wasm.types.SectionId;
@@ -17,7 +22,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -26,6 +34,7 @@ import java.util.concurrent.Future;
 public class Generator {
 
     private final Config config;
+    private String bytecodeMainClass;
 
     public Generator(Config config) {
         this.config = config;
@@ -93,6 +102,89 @@ public class Generator {
         }
     }
 
+    public void generateBytecodeAndDispatch() throws IOException {
+        WasmModule module = Parser.parse(config.wasmFile());
+        String packagePath = config.getPackageName().replace('.', '/');
+        String baseName = config.getBaseName();
+
+        java.nio.file.Path resourceDir = config.targetResourceFolder().resolve(packagePath);
+        Files.createDirectories(resourceDir);
+
+        // Compile to JVM bytecode with Chicory compiler
+        com.dylibso.chicory.compiler.internal.CompilerResult result =
+                Compiler.builder(module)
+                        .withInterpreterFallback(InterpreterFallback.WARN)
+                        .withClassCollectorFactory(ClassLoadingCollector::new)
+                        .build()
+                        .compile();
+
+        ClassLoadingCollector collector = (ClassLoadingCollector) result.collector();
+        Set<Integer> interpretedFunctions = result.interpretedFunctions();
+
+        // Parse code_length per func_* method from compiled class bytes
+        Map<Integer, Integer> funcCodeLengths = new HashMap<>();
+        for (byte[] classBytes : result.classBytes().values()) {
+            funcCodeLengths.putAll(CodeLengthAnalyzer.analyze(classBytes));
+        }
+
+        // Build isNative[] dispatch map
+        int numImports =
+                (int)
+                        module.importSection().stream()
+                                .filter(i -> i.importType() == ExternalType.FUNCTION)
+                                .count();
+        int definedFuncs = module.functionSection().functionCount();
+        int totalFuncs = numImports + definedFuncs;
+        boolean[] isNative = new boolean[totalFuncs];
+
+        for (int funcId : interpretedFunctions) {
+            if (funcId >= 0 && funcId < totalFuncs) {
+                isNative[funcId] = true;
+            }
+        }
+        for (Map.Entry<Integer, Integer> entry : funcCodeLengths.entrySet()) {
+            if (entry.getValue() >= CodeLengthAnalyzer.HUGE_METHOD_LIMIT) {
+                isNative[entry.getKey()] = true;
+            }
+        }
+
+        // Log dispatch summary
+        int nativeCount = 0;
+        for (boolean b : isNative) {
+            if (b) {
+                nativeCount++;
+            }
+        }
+        int bytecodeCount = totalFuncs - numImports - nativeCount;
+        System.out.println(
+                "Cranelift4J dispatch: "
+                        + totalFuncs
+                        + " functions ("
+                        + numImports
+                        + " imports, "
+                        + nativeCount
+                        + " native [code_length >= "
+                        + CodeLengthAnalyzer.HUGE_METHOD_LIMIT
+                        + "], "
+                        + bytecodeCount
+                        + " bytecode)");
+
+        // Write compiled .class files directly to resource directory
+        this.bytecodeMainClass = collector.mainClassName();
+        for (Map.Entry<String, byte[]> entry : result.classBytes().entrySet()) {
+            String classFilePath = entry.getKey().replace('.', '/') + ".class";
+            java.nio.file.Path classFile = config.targetResourceFolder().resolve(classFilePath);
+            Files.createDirectories(classFile.getParent());
+            Files.write(classFile, entry.getValue());
+        }
+
+        // Serialize dispatch map as .dispatch resource
+        try (FileOutputStream out =
+                new FileOutputStream(resourceDir.resolve(baseName + ".dispatch").toFile())) {
+            DispatchSerializer.serialize(isNative, out);
+        }
+    }
+
     public void generateMetaWasm() throws IOException {
         byte[] wasmBytes = Files.readAllBytes(config.wasmFile());
         var module = Parser.builder().includeSectionId(SectionId.CODE).build().parse(wasmBytes);
@@ -149,20 +241,25 @@ public class Generator {
         var packageName = config.getPackageName();
         var sourceFile = sourceFolder.resolve(baseName + ".java");
 
-        var source = generateSourceCode(packageName, baseName);
+        var source = generateSourceCode(packageName, baseName, bytecodeMainClass);
         Files.writeString(sourceFile, source);
     }
 
-    private static String generateSourceCode(String packageName, String baseName) {
+    private static String generateSourceCode(
+            String packageName, String baseName, String bytecodeMainClass) {
         return "package "
                 + packageName
                 + ";\n"
                 + "\n"
+                + "import com.dylibso.chicory.runtime.ByteArrayMemory;\n"
                 + "import com.dylibso.chicory.runtime.Instance;\n"
+                + "import com.dylibso.chicory.runtime.Machine;\n"
                 + "import com.dylibso.chicory.wasm.Parser;\n"
                 + "import com.dylibso.chicory.wasm.WasmModule;\n"
+                + "import io.roastedroot.cranelift.build.DispatchSerializer;\n"
                 + "import io.roastedroot.cranelift.compiler.CraneliftTarget;\n"
                 + "import io.roastedroot.cranelift.compiler.NativeCodeSerializer;\n"
+                + "import io.roastedroot.cranelift.runner.HybridMachineFactory;\n"
                 + "import io.roastedroot.cranelift.runner.NativeMachineFactory;\n"
                 + "import java.io.IOException;\n"
                 + "import java.io.InputStream;\n"
@@ -195,14 +292,20 @@ public class Generator {
                 + "        }\n"
                 + "    }\n"
                 + "\n"
+                + "    private static Machine createBytecodeMachine(Instance instance) {\n"
+                + "        return new "
+                + bytecodeMainClass
+                + "(instance);\n"
+                + "    }\n"
+                + "\n"
                 + "    private static class NativeCodeHolder {\n"
                 + "\n"
                 + "        static final byte[][] CODE;\n"
                 + "\n"
                 + "        static {\n"
-                + "            var suffix = CraneliftTarget.resourceSuffix(\n"
+                + "            String suffix = CraneliftTarget.resourceSuffix(\n"
                 + "                    CraneliftTarget.detectHost());\n"
-                + "            var resource = \""
+                + "            String resource = \""
                 + baseName
                 + ".\" + suffix + \".native\";\n"
                 + "            try (InputStream in =\n"
@@ -222,19 +325,70 @@ public class Generator {
                 + "        }\n"
                 + "    }\n"
                 + "\n"
+                + "    private static class DispatchHolder {\n"
+                + "\n"
+                + "        static final boolean[] IS_NATIVE;\n"
+                + "\n"
+                + "        static {\n"
+                + "            try (InputStream in =\n"
+                + "                    "
+                + baseName
+                + ".class.getResourceAsStream(\""
+                + baseName
+                + ".dispatch\")) {\n"
+                + "                if (in == null) {\n"
+                + "                    throw new IllegalStateException(\n"
+                + "                            \"Missing dispatch resource: "
+                + baseName
+                + ".dispatch\");\n"
+                + "                }\n"
+                + "                IS_NATIVE = DispatchSerializer.deserialize(in);\n"
+                + "            } catch (IOException e) {\n"
+                + "                throw new UncheckedIOException(\n"
+                + "                        \"Failed to load dispatch map\", e);\n"
+                + "            }\n"
+                + "        }\n"
+                + "    }\n"
+                + "\n"
                 + "    public static WasmModule load() {\n"
                 + "        return WasmModuleHolder.INSTANCE;\n"
                 + "    }\n"
                 + "\n"
                 + "    public static Instance.Builder builder() {\n"
-                + "        var module = load();\n"
-                + "        var factory =\n"
-                + "                new NativeMachineFactory(module, NativeCodeHolder.CODE);\n"
+                + "        String suffix = CraneliftTarget.resourceSuffix(\n"
+                + "                CraneliftTarget.detectHost());\n"
+                + "        String resource = \""
+                + baseName
+                + ".\" + suffix + \".native\";\n"
+                + "        if ("
+                + baseName
+                + ".class.getResourceAsStream(resource) == null) {\n"
+                + "            return safe();\n"
+                + "        }\n"
+                + "        return fast();\n"
+                + "    }\n"
+                + "\n"
+                + "    public static Instance.Builder safe() {\n"
+                + "        WasmModule module = WasmModuleHolder.INSTANCE;\n"
+                + "        return Instance.builder(module)\n"
+                + "                .withMachineFactory("
+                + baseName
+                + "::createBytecodeMachine)\n"
+                + "                .withMemoryFactory(ByteArrayMemory::new);\n"
+                + "    }\n"
+                + "\n"
+                + "    public static Instance.Builder fast() {\n"
+                + "        WasmModule module = WasmModuleHolder.INSTANCE;\n"
+                + "        HybridMachineFactory factory = new HybridMachineFactory(\n"
+                + "                module, NativeCodeHolder.CODE,\n"
+                + "                "
+                + baseName
+                + "::createBytecodeMachine, DispatchHolder.IS_NATIVE);\n"
                 + "        return Instance.builder(module)\n"
                 + "                .withMachineFactory(factory::compile)\n"
                 + "                .withTableFactory(factory::createTable)\n"
                 + "                .withGlobalFactory(factory::createGlobal)\n"
-                + "                .withMemoryFactory(NativeMachineFactory::createMemory);\n"
+                + "                .withMemoryFactory(HybridMachineFactory::createMemory);\n"
                 + "    }\n"
                 + "}\n";
     }

@@ -5,3 +5,4 @@ hs_err_pid*.log
 core.*
 
 /testsuite
+dependency-reduced-pom.xml

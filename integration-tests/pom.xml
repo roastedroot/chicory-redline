@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.roastedroot</groupId>
+    <artifactId>cranelift4j-parent</artifactId>
+    <version>999-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>cranelift4j-integration-tests</artifactId>
+  <packaging>jar</packaging>
+
+  <name>Cranelift4J - Integration Tests</name>
+  <description>Integration tests for the Cranelift4J Maven plugin</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>cranelift-build-time-compiler</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- Dummy dependencies to force reactor ordering -->
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>cranelift-compiler-maven-plugin</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>cranelift-runner</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <configuration>
+          <ignoredUnusedDeclaredDependencies combine.children="append">
+            <dependency>io.roastedroot:cranelift-compiler-maven-plugin</dependency>
+            <dependency>io.roastedroot:cranelift-runner</dependency>
+            <dependency>io.roastedroot:cranelift-build-time-compiler</dependency>
+          </ignoredUnusedDeclaredDependencies>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-invoker-plugin</artifactId>
+        <version>${maven-invoker-plugin.version}</version>
+        <configuration>
+          <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
+          <cloneClean>true</cloneClean>
+          <settingsFile>src/it/settings.xml</settingsFile>
+          <postBuildHookScript>verify</postBuildHookScript>
+          <addTestClassPath>true</addTestClassPath>
+          <skipInvocation>${skipTests}</skipInvocation>
+          <streamLogs>true</streamLogs>
+          <invokerPropertiesFile>invoker.properties</invokerPropertiesFile>
+        </configuration>
+        <executions>
+          <execution>
+            <id>integration-tests</id>
+            <goals>
+              <goal>install</goal>
+              <goal>run</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>
