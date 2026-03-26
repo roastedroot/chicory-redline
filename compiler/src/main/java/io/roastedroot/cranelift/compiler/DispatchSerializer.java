@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.build;
+package io.roastedroot.cranelift.compiler;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;

@@ -14,6 +14,7 @@ import com.dylibso.chicory.wasm.types.OpCode;
 import com.dylibso.chicory.wasm.types.RawSection;
 import com.dylibso.chicory.wasm.types.SectionId;
 import io.roastedroot.cranelift.compiler.CraneliftTarget;
+import io.roastedroot.cranelift.compiler.DispatchSerializer;
 import io.roastedroot.cranelift.compiler.NativeCodeSerializer;
 import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
 import java.io.ByteArrayOutputStream;
@@ -257,7 +258,7 @@ public class Generator {
                 + "import com.dylibso.chicory.runtime.Machine;\n"
                 + "import com.dylibso.chicory.wasm.Parser;\n"
                 + "import com.dylibso.chicory.wasm.WasmModule;\n"
-                + "import io.roastedroot.cranelift.build.DispatchSerializer;\n"
+                + "import io.roastedroot.cranelift.compiler.DispatchSerializer;\n"
                 + "import io.roastedroot.cranelift.compiler.CraneliftTarget;\n"
                 + "import io.roastedroot.cranelift.compiler.NativeCodeSerializer;\n"
                 + "import io.roastedroot.cranelift.runner.HybridMachineFactory;\n"

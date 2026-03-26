@@ -13,16 +13,6 @@
 
   <dependencies>
     <dependency>
-      <groupId>com.dylibso.chicory</groupId>
-      <artifactId>runtime</artifactId>
-      <version>@chicory.version@</version>
-    </dependency>
-    <dependency>
-      <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-build-time-compiler</artifactId>
-      <version>@project.version@</version>
-    </dependency>
-    <dependency>
       <groupId>io.roastedroot</groupId>
       <artifactId>cranelift-runner</artifactId>
       <version>@project.version@</version>
