@@ -161,20 +161,35 @@ Hybrid dispatch (3 native hot-path functions) achieves 95% of all-native perform
 
 ## Next priorities
 
-### P0: Validate cross-boundary dispatch on sqlite4j2
+### P0: Validate hybrid machine correctness + sqlite4j2 regression
 
-Cross-boundary dispatch (native→bytecode) is implemented via bridge stubs
-in funcTable + delegate pattern. The CALL emitter already writes args to
-ctxBuffer for ALL direct calls, making bridge stubs sound.
+**1. sqlite4j2 regression**: "uninitialized element" trap when using the
+cranelift-compiler-maven-plugin. Last known-good commit: `b2c5de5`
+(pre-hybrid, direct NativeMachineFactory). Bisect from there through
+`da84306` (hybrid machine) to find the breaking change. May be a
+NativeTable element segment initialization issue.
 
-Implemented: selective Cranelift compilation (only native-selected functions),
-bridge stubs for non-native entries, delegate wiring in HybridMachineFactory.
-IT tests pass (toml2json). Need to validate on sqlite4j2 — "uninitialized
-element" trap when integrating cranelift-compiler-maven-plugin. May be a
-table element segment initialization issue with NativeTable.
+**2. Verify functions run on the correct machine**: The hybrid dispatch
+must ensure each function executes on the machine it was dispatched to.
+Specifically:
+- Entry-point dispatch: HybridMachine.call() routes to native or bytecode
+  based on isNative[funcId] — verified by IT tests + JMH benchmarks
+- Native→native internal calls: funcTable jumps — stays native (verified
+  by 28K spec tests in pure-native mode)
+- Native→bytecode cross-boundary: bridge stubs in funcTable route through
+  delegate via importDispatchDirect → HybridMachine → bytecode machine.
+  The CALL emitter writes args to ctxBuffer for ALL calls, making this
+  sound. **Needs validation on a real module where it actually triggers**
+  (toml2json threshold=8000 has 3 native functions — do they call non-native
+  functions? If not, cross-boundary is untested)
+- Bytecode→native cross-boundary: bytecode calls instance.getMachine().call()
+  which is the HybridMachine → routes to native. **Needs a test case**
+- CALL_INDIRECT across boundaries: trampoline → HybridMachine.call() →
+  correct machine. **Needs a test case**
 
-Last known-good commit for sqlite4j2: `b2c5de5` (pre-hybrid, direct
-NativeMachineFactory). Bisect from there to find the regression.
+**3. Add targeted cross-boundary tests**: Write wasm modules that force
+cross-boundary calls (native function calling bytecode function and vice
+versa) to verify correctness end-to-end.
 
 ### P1: Windows support
 
