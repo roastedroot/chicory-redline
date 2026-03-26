@@ -181,10 +181,11 @@ Tasks:
 
 ### P1: Rust bridge cleanup
 
-- [ ] Guard `wasm_malloc(0)` — `std::alloc::alloc` with zero-sized layout is UB
-- [ ] Clear `Session` vecs after `compile()` to free memory between compilations
-- [ ] Add null guard in `b()` for clear error if builder is used after `compile()`
-- [ ] Pin `interpretedFunctions` in `bridge/pom.xml` (currently `interpreterFallback=WARN`)
+- [x] Guard `wasm_malloc(0)` — `std::alloc::alloc` with zero-sized layout is UB
+- [x] Clear `Session` vecs after `compile()` to free memory between compilations
+- [x] Add null guard in `b()` for clear error if builder is used after `compile()`
+- [ ] Pin `interpretedFunctions` in `bridge/pom.xml` (currently `interpreterFallback=WARN`,
+  kept because bridge wasm legitimately has functions too large for JVM bytecode)
 
 ### P2: Cache ctxBuffer memBase writes
 
