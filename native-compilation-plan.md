@@ -297,12 +297,16 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
 
 - **Hybrid Machine**: `HybridMachine`/`HybridMachineFactory` dispatch per-function
   between Cranelift native and Chicory bytecode based on `code_length` threshold
-  (default 8000 = HotSpot `HugeMethodLimit`). All functions compiled by both
-  compilers at build time. Generated module provides `safe()`/`fast()`/`builder()`
-  API with automatic architecture fallback. `CodeLengthAnalyzer` parses Code
-  attribute via ASM. Configurable `<threshold>` in Maven plugin (0 = all-native).
-  Integration tests (toml2json) + JMH benchmarks validate 6.2x speedup.
-  Bytecode `.class` files written directly to resources (no JAR-in-JAR).
+  (default 8000 = HotSpot `HugeMethodLimit`). Generated module provides
+  `safe()`/`fast()`/`builder()` API with automatic architecture fallback.
+  `CodeLengthAnalyzer` parses Code attribute via ASM. Configurable `<threshold>`
+  in Maven plugin (0 = all-native). Selective Cranelift compilation: only
+  native-selected functions compiled (saves build time). Bridge stubs in
+  funcTable for non-native functions route through delegate via
+  `importDispatchDirect` (ctxBuffer-based — CALL emitter writes args to
+  ctxBuffer for ALL direct calls). Bytecode `.class` files written directly
+  to resources. Integration tests (toml2json) + JMH benchmarks validate
+  6.2x speedup. Cross-boundary dispatch paths identified (see P0).
 - **Benchmark correctness**: memBase reload after calls, br_table via JumpTable
 - **Factory reuse**: globalIndex reset, nativeTables clear between instances
 - **invokeExact**: replaced `invokeWithArguments` + `Object[]` boxing with
@@ -363,6 +367,15 @@ mvn clean install -DskipTests && mvn install -pl runner -Dtest=SpecV1ConstTest
 
 # Compiler-only tests (UnsupportedOpcodeTest)
 mvn clean install -DskipTests && mvn install -pl compiler
+
+# Integration tests (toml2json — safe/fast/builder modes)
+mvn clean install -DskipTests && mvn install -pl integration-tests
+
+# JMH benchmarks (safe vs fast vs allNative)
+mvn clean install -DskipTests && jmh/run.sh
+
+# Rebuild toml2json wasm (only when lib.rs changes)
+cd wasm/toml2json && ./build.sh
 ```
 
 **Important**: Always use `mvn clean install` (not `-pl`) for the initial build.
