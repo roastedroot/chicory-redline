@@ -161,27 +161,17 @@ Hybrid dispatch (3 native hot-path functions) achieves 95% of all-native perform
 
 ## Next priorities
 
-### P0: Cross-boundary dispatch for internal calls
+### P0: Validate cross-boundary dispatch on sqlite4j2
 
-Currently, once execution enters a machine (native or bytecode) via the
-HybridMachine entry-point dispatch, ALL internal function-to-function calls
-stay within that machine. Native direct CALLs go through funcTable (always
-native), and bytecode calls go through lookupswitch (always bytecode).
+Cross-boundary dispatch (native→bytecode) is implemented via bridge stubs
+in funcTable + delegate pattern. The CALL emitter already writes args to
+ctxBuffer for ALL direct calls, making bridge stubs sound.
 
-This means a large native function calling a small function runs that small
-function natively too, missing the HotSpot JIT optimization it would get
-via bytecode. The hybrid dispatch only affects top-level exported function
-calls from Java — not internal wasm call chains.
-
-Root cause: native direct CALLs pass arguments via CPU registers (System V
-ABI). A bridge stub at funcTable[target] would need to marshal register args
-back to Java, but the current `importDispatchDirect` reads from ctxBuffer
-(only written for imports, not for function-to-function calls).
-
-To fix: modify the Cranelift emitter to emit ctxBuffer-based arg passing
-for calls to non-native targets (requires knowing the dispatch map at
-Cranelift compile time), or implement a Panama upcall stub that correctly
-captures register arguments and forwards them to the bytecode machine.
+Implemented: selective Cranelift compilation (only native-selected functions),
+bridge stubs for non-native entries, delegate wiring in HybridMachineFactory.
+IT tests pass (toml2json). Need to validate on sqlite4j2 — "uninitialized
+element" trap when integrating cranelift-compiler-maven-plugin. May be a
+table element segment initialization issue with NativeTable.
 
 ### P1: Windows support
 
