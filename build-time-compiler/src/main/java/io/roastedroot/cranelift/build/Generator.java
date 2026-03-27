@@ -51,8 +51,10 @@ public class Generator {
         var resourceDir = config.targetResourceFolder().resolve(packagePath);
         Files.createDirectories(resourceDir);
 
+        boolean[] filter = this.dispatchFilter;
+
         if (targets.size() == 1) {
-            compileForTarget(targets.get(0), module, resourceDir, baseName, null);
+            compileForTarget(targets.get(0), module, resourceDir, baseName, filter);
             return;
         }
 
@@ -65,7 +67,7 @@ public class Generator {
                                 () -> {
                                     try {
                                         compileForTarget(
-                                                triple, module, resourceDir, baseName, null);
+                                                triple, module, resourceDir, baseName, filter);
                                     } catch (IOException e) {
                                         throw new RuntimeException(e);
                                     }

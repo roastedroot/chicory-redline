@@ -119,6 +119,11 @@ public final class NativeMachine implements Machine {
         // Allocate call context buffer
         ctxBuffer = arena.allocate(CTX_SIZE, 8);
 
+        // Register ctxBuffer with NativeMemory so grow() updates MEMORY_PAGES
+        if (instance.memory() instanceof NativeMemory nativeMemory) {
+            nativeMemory.setCtxBuffer(ctxBuffer);
+        }
+
         // Allocate function pointer table (one i64 per function)
         funcTable = arena.allocate((long) totalFuncs * 8, 8);
 

@@ -10,6 +10,7 @@ import com.dylibso.chicory.wasm.types.ActiveDataSegment;
 import com.dylibso.chicory.wasm.types.DataSegment;
 import com.dylibso.chicory.wasm.types.MemoryLimits;
 import com.dylibso.chicory.wasm.types.PassiveDataSegment;
+import io.roastedroot.cranelift.compiler.internal.CtxBuffer;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.ref.Cleaner;
@@ -33,6 +34,9 @@ public final class NativeMemory implements Memory, AutoCloseable {
     private final long reservedSize;
     private final Cleaner.Cleanable cleanable;
     private DataSegment[] dataSegments;
+    // Optional ctxBuffer sink — when set, grow() writes updated pages here
+    // so native code always sees current bounds without explicit refresh.
+    private MemorySegment ctxBuffer;
 
     private record CleanupAction(MemorySegment reserved, long reservedSize) implements Runnable {
         @Override
@@ -73,6 +77,17 @@ public final class NativeMemory implements Memory, AutoCloseable {
         cleanable.clean();
     }
 
+    /**
+     * Register the ctxBuffer so that {@link #grow} writes updated page count
+     * directly to {@link CtxBuffer#MEMORY_PAGES}. This makes ctxBuffer the
+     * single source of truth — no matter which execution path calls grow()
+     * (native upcall, bytecode machine, Java test harness), the native code's
+     * bounds check always sees the current value.
+     */
+    public void setCtxBuffer(MemorySegment ctxBuffer) {
+        this.ctxBuffer = ctxBuffer;
+    }
+
     /** Get the native address of the memory buffer, for passing to native code. */
     public MemorySegment nativeAddress() {
         return segment;
@@ -96,6 +111,9 @@ public final class NativeMemory implements Memory, AutoCloseable {
             PanamaExecutor.mprotectReadWrite(reserved, newSize);
             this.segment = reserved.reinterpret(newSize);
             this.nPages = numPages;
+            if (ctxBuffer != null) {
+                ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.MEMORY_PAGES, numPages);
+            }
         } catch (Throwable t) {
             return -1;
         }
