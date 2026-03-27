@@ -139,7 +139,7 @@ All skipped tests are assert_trap or validation tests. Zero happy-path failures.
 | bazel-wasm-repro (toml2json) | 237KB | PASS | 279 funcs, ~80s compilation |
 | jq4j | 951KB | FAIL (9/21) | 24 funcs missing atomic opcodes |
 | prism (Ruby parser) | 564KB | PASS | 10x faster than Chicory AOT, build-time compilation via Maven plugin |
-| sqlite4j2 | 849KB | PASS | 4x faster than Chicory AOT, build-time compilation via Maven plugin |
+| sqlite4j2 | 849KB | PASS | 4x faster than Chicory AOT, hybrid dispatch (9 native, 2640 bytecode at threshold=4000), 338+ tests passing |
 
 ### Benchmark results (iterFact, input=1000)
 
@@ -161,35 +161,12 @@ Hybrid dispatch (3 native hot-path functions) achieves 95% of all-native perform
 
 ## Next priorities
 
-### P0: Validate hybrid machine correctness + sqlite4j2 regression
+### P1: Add targeted cross-boundary tests
 
-**1. sqlite4j2 regression**: "uninitialized element" trap when using the
-cranelift-compiler-maven-plugin. Last known-good commit: `b2c5de5`
-(pre-hybrid, direct NativeMachineFactory). Bisect from there through
-`da84306` (hybrid machine) to find the breaking change. May be a
-NativeTable element segment initialization issue.
-
-**2. Verify functions run on the correct machine**: The hybrid dispatch
-must ensure each function executes on the machine it was dispatched to.
-Specifically:
-- Entry-point dispatch: HybridMachine.call() routes to native or bytecode
-  based on isNative[funcId] — verified by IT tests + JMH benchmarks
-- Native→native internal calls: funcTable jumps — stays native (verified
-  by 28K spec tests in pure-native mode)
-- Native→bytecode cross-boundary: bridge stubs in funcTable route through
-  delegate via importDispatchDirect → HybridMachine → bytecode machine.
-  The CALL emitter writes args to ctxBuffer for ALL calls, making this
-  sound. **Needs validation on a real module where it actually triggers**
-  (toml2json threshold=8000 has 3 native functions — do they call non-native
-  functions? If not, cross-boundary is untested)
-- Bytecode→native cross-boundary: bytecode calls instance.getMachine().call()
-  which is the HybridMachine → routes to native. **Needs a test case**
-- CALL_INDIRECT across boundaries: trampoline → HybridMachine.call() →
-  correct machine. **Needs a test case**
-
-**3. Add targeted cross-boundary tests**: Write wasm modules that force
-cross-boundary calls (native function calling bytecode function and vice
-versa) to verify correctness end-to-end.
+Write wasm modules that force cross-boundary calls (native function calling
+bytecode function and vice versa) to verify correctness with dedicated unit
+tests. Current validation is through real-world modules (toml2json, sqlite4j2)
+but explicit test cases would catch regressions earlier.
 
 ### P1: Windows support
 
@@ -219,8 +196,9 @@ Tasks:
 
 ### P2: Cache ctxBuffer memBase writes
 
-Currently memBase and pages are written to ctxBuffer on every `call()`.
-Only update after `memory.grow` — saves two off-heap writes per call.
+Currently memBase is written to ctxBuffer on every `call()`. With mmap,
+memBase never changes — write once at setup, save one off-heap write per call.
+(MEMORY_PAGES is now handled by `NativeMemory.grow()` via `setCtxBuffer()`.)
 
 ### P2: Fix address.wast OOB (28 skipped tests)
 
@@ -306,7 +284,19 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
   `importDispatchDirect` (ctxBuffer-based — CALL emitter writes args to
   ctxBuffer for ALL direct calls). Bytecode `.class` files written directly
   to resources. Integration tests (toml2json) + JMH benchmarks validate
-  6.2x speedup. Cross-boundary dispatch paths identified (see P0).
+  6.2x speedup. Cross-boundary dispatch verified on toml2json (3 native /
+  276 bytecode) and sqlite4j2 (9 native / 2640 bytecode at threshold=4000).
+- **Hybrid machine correctness fixes** (`fdb200b`):
+  1. Generator selective compilation: `generateNativeCode()` now passes
+     `dispatchFilter` to `compileForTarget()` — previously always `null`,
+     compiling all functions with Cranelift and preventing bridge stub creation.
+  2. Cross-boundary memory.grow: `NativeMemory.grow()` writes `MEMORY_PAGES`
+     directly to ctxBuffer via `setCtxBuffer()`. Previously, when bytecode
+     called `memory.grow()` through a bridge stub, ctxBuffer stayed stale
+     (pages not updated), causing native code OOB traps on valid accesses.
+     Now ctxBuffer is the single source of truth — updated regardless of
+     which execution path triggers the grow (native upcall, bytecode, Java).
+  Validated: 28022 spec tests, toml2json IT 3/3, sqlite4j2 338+ tests.
 - **Benchmark correctness**: memBase reload after calls, br_table via JumpTable
 - **Factory reuse**: globalIndex reset, nativeTables clear between instances
 - **invokeExact**: replaced `invokeWithArguments` + `Object[]` boxing with
