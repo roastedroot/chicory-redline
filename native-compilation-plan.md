@@ -22,18 +22,13 @@ Two-pass compilation: NativeAnalyzer (reachability via exitBlockDepth) produces
 parallel boolean arrays, NativeEmitters (static opcode handlers) emit Cranelift IR
 through EmitContext. NativeCompiler is a thin orchestrator.
 
-### Hybrid strategy: JVM bytecode + Cranelift based on HugeMethodLimit
+### Strategy: all-native compilation via Cranelift
 
-HotSpot `HugeMethodLimit` = **8000 bytes** of bytecode (`code_length` in the
-class file Code attribute). Above this, C1/C2 give up optimizing the method.
-Reference: https://github.com/search?q=repo%3Aopenjdk%2Fjdk+HugeMethodLimit&type=code
-
-- **Below threshold**: Use Chicory's default AOT compiler (Wasm -> JVM bytecode).
-  HotSpot JIT optimizes these well.
-- **Above threshold**: Use Cranelift4J (Wasm -> native assembly). HotSpot would
-  give up anyway, so compile directly to machine code.
-
-Cranelift4J is a targeted complement, not a replacement.
+All Wasm functions are compiled to native machine code via Cranelift. No hybrid
+dispatch — Cranelift4J compiles the entire module. A hybrid approach (mixing
+Cranelift native with Chicory JVM bytecode based on HotSpot's HugeMethodLimit)
+was explored and rejected after benchmarking showed no performance benefit over
+all-native, while adding significant complexity (see "Completed" section).
 
 ## Module structure
 
@@ -152,14 +147,56 @@ Native:        911,764 ops/s  (144x)   <- within 9% of JVM compiled
 ### Benchmark results (toml2json, 237KB, 279 functions)
 
 ```
-safe (bytecode only):       5,781 ops/s  (1x)
-fast (threshold=8000):     35,869 ops/s  (6.2x)   <- 3/279 funcs native
-allNative (threshold=0):   37,693 ops/s  (6.5x)   <- all 279 funcs native
+safe (bytecode only):       6,813 ops/s  (1x)
+fast (threshold=8000):     45,095 ops/s  (6.6x)   <- 3/279 funcs native
+allNative (threshold=0):   44,111 ops/s  (6.5x)   <- all 279 funcs native
 ```
 
-Hybrid dispatch (3 native hot-path functions) achieves 95% of all-native performance.
+Hybrid dispatch achieves parity with all-native on toml2json.
+
+### Decision: all-native only, remove hybrid machine
+
+After extensive benchmarking and profiling on both toml2json and sqlite4j2, the
+hybrid machine approach (mixing Cranelift native + Chicory bytecode) adds
+complexity without performance benefit:
+
+- **toml2json**: `fast ≈ allNative` (45,095 vs 44,111 ops/s) — no benefit from
+  hybrid dispatch, the overhead of switching on `call_indirect` is negligible
+  but also pointless since all-native is equally fast.
+- **sqlite4j2**: profiling with threshold=0 (all-native) shows the native
+  compiler handles the full 849KB module correctly. The hybrid dispatch adds
+  overhead from bridge stubs, upcalls, and HybridMachine routing with no
+  measurable improvement over pure native.
+- The hybrid machine adds significant complexity: `HybridMachine`,
+  `HybridMachineFactory`, `CodeLengthAnalyzer`, dispatch serialization,
+  bridge stubs for `call_indirect`, bytecode `.class` packaging, threshold
+  configuration, and multiple code paths to maintain.
+
+**Decision**: Remove the hybrid machine. The `fast()` API becomes all-native
+(equivalent to current threshold=0). The `safe()` API remains pure Chicory
+bytecode as a fallback for unsupported platforms. This simplifies the codebase
+and lets us focus on improving the native compiler.
 
 ## Next priorities
+
+### P0: Remove hybrid machine
+
+Remove the hybrid dispatch machinery and simplify to native-only:
+
+- [ ] Remove `HybridMachine.java`, `HybridMachineFactory.java`
+- [ ] Remove `CodeLengthAnalyzer.java`, `DispatchSerializer.java`
+- [ ] Remove dispatch map generation from `Generator` (`.dispatch` file, bytecode
+  `.class` packaging, threshold config)
+- [ ] Simplify `Generator` to produce only `.native` + `.meta` + source wrapper
+- [ ] Generated `fast()` uses `NativeMachineFactory` directly (no dispatch map)
+- [ ] Remove `<threshold>` config from Maven plugin
+- [ ] Remove `HybridMachineTest` (replace with a simple all-native smoke test)
+- [ ] Remove bridge stub infrastructure for `call_indirect` dispatch
+  (`isNativeDispatch`, `bridgeStubAddresses`, `setIndirectDispatch`)
+- [ ] Remove `NativeMemory.setCtxBuffer()` (only needed for cross-boundary grow;
+  with all-native, memory.grow always goes through `memoryGrowHandler`)
+- [ ] Update JMH benchmarks (remove `fast` vs `allNative` distinction)
+- [ ] Update integration tests
 
 ### P1: Windows support
 
@@ -266,40 +303,20 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
 
 ## Completed
 
-- **Hybrid Machine**: `HybridMachine`/`HybridMachineFactory` dispatch per-function
-  between Cranelift native and Chicory bytecode based on `code_length` threshold
-  (default 8000 = HotSpot `HugeMethodLimit`). Generated module provides
-  `safe()`/`fast()`/`builder()` API with automatic architecture fallback.
-  `CodeLengthAnalyzer` parses Code attribute via ASM. Configurable `<threshold>`
-  in Maven plugin (0 = all-native). Selective Cranelift compilation: only
-  native-selected functions compiled (saves build time). Bridge stubs in
-  funcTable for non-native functions route through delegate via
-  `importDispatchDirect` (ctxBuffer-based — CALL emitter writes args to
-  ctxBuffer for ALL direct calls). Bytecode `.class` files written directly
-  to resources. Integration tests (toml2json) + JMH benchmarks validate
-  6.2x speedup. Cross-boundary dispatch verified on toml2json (3 native /
-  276 bytecode) and sqlite4j2 (9 native / 2640 bytecode at threshold=4000).
-- **Hybrid machine correctness fixes** (`fdb200b`):
-  1. Generator selective compilation: `generateNativeCode()` now passes
-     `dispatchFilter` to `compileForTarget()` — previously always `null`,
-     compiling all functions with Cranelift and preventing bridge stub creation.
-  2. Cross-boundary memory.grow: `NativeMemory.grow()` writes `MEMORY_PAGES`
-     directly to ctxBuffer via `setCtxBuffer()`. Previously, when bytecode
-     called `memory.grow()` through a bridge stub, ctxBuffer stayed stale
-     (pages not updated), causing native code OOB traps on valid accesses.
-     Now ctxBuffer is the single source of truth — updated regardless of
-     which execution path triggers the grow (native upcall, bytecode, Java).
-  Validated: 28022 spec tests, toml2json IT 3/3, sqlite4j2 338+ tests.
-- **NativeTable HybridMachine resolution** (`2941b17`):
-  `NativeTable.resolveFromInstance()` checked `instanceof NativeMachine` but
-  in hybrid mode `getMachine()` returns `HybridMachine`. Table entries got
-  funcPtr=0, causing "uninitialized element" traps on `call_indirect`. Fix:
-  reach through `HybridMachine.nativeMachine()` to the underlying NativeMachine.
-  This was the sqlite4j2 P0 "uninitialized element" regression.
-- **Cross-boundary smoke tests** (`HybridMachineTest`, 5 tests): native→bytecode
-  direct call, bytecode entry→native dispatch, cross-boundary memory.grow,
-  call_indirect across boundary, chained native↔bytecode calls. Caught the
-  NativeTable bug immediately.
+- **Hybrid Machine (explored, rejected — to be removed, see P0)**: Explored
+  per-function dispatch between Cranelift native and Chicory bytecode based on
+  `code_length` threshold (HotSpot `HugeMethodLimit`). Multiple approaches tried:
+  - Selective compilation (only compile native-selected functions): 20x regression
+    from bridge stub overhead on direct `call` (1,731 vs 35,869 ops/s)
+  - All compiled + entry-point-only dispatch: fast ≈ allNative on toml2json
+    (45,095 vs 44,111) — no benefit, just complexity
+  - All compiled + `call_indirect` routing via NativeTable bridge stubs:
+    fast ≈ allNative — negligible overhead but also no improvement
+  - sqlite4j2 profiling: hybrid adds overhead without measurable benefit
+  **Conclusion**: all-native (threshold=0) is always the right choice. Hybrid
+  dispatch adds complexity (HybridMachine, dispatch maps, bridge stubs,
+  CodeLengthAnalyzer, bytecode packaging) with no performance benefit.
+  Decision: remove hybrid machinery, focus on native compiler.
 - **Benchmark correctness**: memBase reload after calls, br_table via JumpTable
 - **Factory reuse**: globalIndex reset, nativeTables clear between instances
 - **invokeExact**: replaced `invokeWithArguments` + `Object[]` boxing with
