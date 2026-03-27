@@ -161,13 +161,6 @@ Hybrid dispatch (3 native hot-path functions) achieves 95% of all-native perform
 
 ## Next priorities
 
-### P1: Add targeted cross-boundary tests
-
-Write wasm modules that force cross-boundary calls (native function calling
-bytecode function and vice versa) to verify correctness with dedicated unit
-tests. Current validation is through real-world modules (toml2json, sqlite4j2)
-but explicit test cases would catch regressions earlier.
-
 ### P1: Windows support
 
 PanamaExecutor uses mmap/mprotect/munmap which don't exist on Windows.
@@ -297,6 +290,16 @@ Emit as native `memmove`/`memset` with inline OOB checks — no trampoline neede
      Now ctxBuffer is the single source of truth — updated regardless of
      which execution path triggers the grow (native upcall, bytecode, Java).
   Validated: 28022 spec tests, toml2json IT 3/3, sqlite4j2 338+ tests.
+- **NativeTable HybridMachine resolution** (`2941b17`):
+  `NativeTable.resolveFromInstance()` checked `instanceof NativeMachine` but
+  in hybrid mode `getMachine()` returns `HybridMachine`. Table entries got
+  funcPtr=0, causing "uninitialized element" traps on `call_indirect`. Fix:
+  reach through `HybridMachine.nativeMachine()` to the underlying NativeMachine.
+  This was the sqlite4j2 P0 "uninitialized element" regression.
+- **Cross-boundary smoke tests** (`HybridMachineTest`, 5 tests): native→bytecode
+  direct call, bytecode entry→native dispatch, cross-boundary memory.grow,
+  call_indirect across boundary, chained native↔bytecode calls. Caught the
+  NativeTable bug immediately.
 - **Benchmark correctness**: memBase reload after calls, br_table via JumpTable
 - **Factory reuse**: globalIndex reset, nativeTables clear between instances
 - **invokeExact**: replaced `invokeWithArguments` + `Object[]` boxing with
