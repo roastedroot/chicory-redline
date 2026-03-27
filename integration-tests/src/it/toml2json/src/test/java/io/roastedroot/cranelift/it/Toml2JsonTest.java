@@ -12,15 +12,6 @@ class Toml2JsonTest {
     private static final String SAMPLE_TOML = "[package]\nname = \"test\"\nversion = \"1.0.0\"\n";
 
     @Test
-    void testSafeMode() {
-        var instance = Toml2JsonModule.safe().build();
-        var result = convert(instance, SAMPLE_TOML);
-        assertNotNull(result);
-        assertTrue(result.contains("\"package\""), "Expected JSON key 'package', got: " + result);
-        assertTrue(result.contains("\"test\""), "Expected JSON value 'test', got: " + result);
-    }
-
-    @Test
     void testFastMode() {
         var instance = Toml2JsonModule.fast().build();
         var result = convert(instance, SAMPLE_TOML);

@@ -18,13 +18,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
 /**
- * Compares execution modes for toml2json (237KB, 279 functions):
- *
- * <ul>
- *   <li>safe — pure Chicory bytecode
- *   <li>fast — hybrid: 3 native (code_length >= 8000) + 276 bytecode
- *   <li>allNative — all 279 functions via Cranelift native (threshold=0)
- * </ul>
+ * Benchmarks toml2json (237KB, 279 functions) — Cranelift native vs Chicory bytecode.
  *
  * <p>Run from the repo root: {@code jmh/run.sh}
  */
@@ -47,26 +41,7 @@ public class BenchmarkToml2Json {
                     .getBytes(StandardCharsets.UTF_8);
 
     @State(Scope.Thread)
-    public static class SafeState {
-        Instance instance;
-        ExportFunction toml2json;
-        int inPtr;
-        int outPtr;
-        int outLen;
-
-        @Setup(Level.Trial)
-        public void setup() {
-            instance = Toml2JsonModule.safe().build();
-            var allocate = instance.export("allocate");
-            toml2json = instance.export("toml2json");
-            inPtr = (int) allocate.apply(TOML_BYTES.length, 0)[0];
-            outPtr = (int) allocate.apply(4, 0)[0];
-            outLen = (int) allocate.apply(4, 0)[0];
-        }
-    }
-
-    @State(Scope.Thread)
-    public static class FastState {
+    public static class NativeState {
         Instance instance;
         ExportFunction toml2json;
         int inPtr;
@@ -85,7 +60,7 @@ public class BenchmarkToml2Json {
     }
 
     @State(Scope.Thread)
-    public static class AllNativeState {
+    public static class ChicoryState {
         Instance instance;
         ExportFunction toml2json;
         int inPtr;
@@ -94,7 +69,10 @@ public class BenchmarkToml2Json {
 
         @Setup(Level.Trial)
         public void setup() {
-            instance = Toml2JsonAllNative.fast().build();
+            instance =
+                    Instance.builder(Toml2JsonChicory.load())
+                            .withMachineFactory(Toml2JsonChicory::create)
+                            .build();
             var allocate = instance.export("allocate");
             toml2json = instance.export("toml2json");
             inPtr = (int) allocate.apply(TOML_BYTES.length, 0)[0];
@@ -105,19 +83,13 @@ public class BenchmarkToml2Json {
 
     @Benchmark
     @BenchmarkMode(Mode.Throughput)
-    public void safe(SafeState s, Blackhole bh) {
+    public void chicory(ChicoryState s, Blackhole bh) {
         bh.consume(convert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen));
     }
 
     @Benchmark
     @BenchmarkMode(Mode.Throughput)
-    public void fast(FastState s, Blackhole bh) {
-        bh.consume(convert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen));
-    }
-
-    @Benchmark
-    @BenchmarkMode(Mode.Throughput)
-    public void allNative(AllNativeState s, Blackhole bh) {
+    public void native_(NativeState s, Blackhole bh) {
         bh.consume(convert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen));
     }
 

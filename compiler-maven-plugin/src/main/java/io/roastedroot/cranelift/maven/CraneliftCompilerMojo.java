@@ -39,14 +39,6 @@ public class CraneliftCompilerMojo extends AbstractMojo {
     /** Target triples to compile for. Defaults to all supported targets. */
     @Parameter private List<String> targets;
 
-    /**
-     * Bytecode size threshold for dispatching to native. Functions with code_length
-     * at or above this value use Cranelift native; below use Chicory bytecode.
-     * Default is 8000 (HotSpot's HugeMethodLimit). Use 0 for all-native.
-     */
-    @Parameter(defaultValue = "8000")
-    private int threshold;
-
     @Parameter(property = "project", required = true, readonly = true)
     private MavenProject project;
 
@@ -59,8 +51,7 @@ public class CraneliftCompilerMojo extends AbstractMojo {
                         .withWasmFile(wasmFile.toPath())
                         .withName(name)
                         .withTargetResourceFolder(targetResourceFolder.toPath())
-                        .withTargetSourceFolder(targetSourceFolder.toPath())
-                        .withHugeMethodThreshold(threshold);
+                        .withTargetSourceFolder(targetSourceFolder.toPath());
         if (targets != null && !targets.isEmpty()) {
             configBuilder.withTargets(targets);
         }
@@ -69,7 +60,6 @@ public class CraneliftCompilerMojo extends AbstractMojo {
         var generator = new Generator(config);
 
         try {
-            generator.generateBytecodeAndDispatch();
             generator.generateNativeCode();
             generator.generateMetaWasm();
             generator.generateSources();

@@ -12,21 +12,18 @@ public final class Config {
     private final Path targetResourceFolder;
     private final Path targetSourceFolder;
     private final List<String> targets;
-    private final int hugeMethodThreshold;
 
     private Config(
             Path wasmFile,
             String name,
             Path targetResourceFolder,
             Path targetSourceFolder,
-            List<String> targets,
-            int hugeMethodThreshold) {
+            List<String> targets) {
         this.wasmFile = wasmFile;
         this.name = name;
         this.targetResourceFolder = targetResourceFolder;
         this.targetSourceFolder = targetSourceFolder;
         this.targets = targets;
-        this.hugeMethodThreshold = hugeMethodThreshold;
     }
 
     public Path wasmFile() {
@@ -47,10 +44,6 @@ public final class Config {
 
     public List<String> targets() {
         return targets;
-    }
-
-    public int hugeMethodThreshold() {
-        return hugeMethodThreshold;
     }
 
     @SuppressWarnings("StringSplitter")
@@ -79,7 +72,6 @@ public final class Config {
         private Path targetResourceFolder;
         private Path targetSourceFolder;
         private List<String> targets;
-        private int hugeMethodThreshold = CodeLengthAnalyzer.DEFAULT_HUGE_METHOD_LIMIT;
 
         private Builder() {}
 
@@ -108,21 +100,10 @@ public final class Config {
             return this;
         }
 
-        public Builder withHugeMethodThreshold(int hugeMethodThreshold) {
-            this.hugeMethodThreshold = hugeMethodThreshold;
-            return this;
-        }
-
         public Config build() {
             List<String> t =
                     (targets != null && !targets.isEmpty()) ? targets : CraneliftTarget.ALL_TARGETS;
-            return new Config(
-                    wasmFile,
-                    name,
-                    targetResourceFolder,
-                    targetSourceFolder,
-                    t,
-                    hugeMethodThreshold);
+            return new Config(wasmFile, name, targetResourceFolder, targetSourceFolder, t);
         }
     }
 }

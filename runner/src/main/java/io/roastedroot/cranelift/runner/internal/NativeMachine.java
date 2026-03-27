@@ -92,8 +92,6 @@ public final class NativeMachine implements Machine {
     private final Cleaner.Cleanable cleanable;
     // Pending exception from upcall stubs (cannot throw through native frames)
     private volatile Throwable pendingException;
-    // Delegate for cross-boundary dispatch (native → bytecode)
-    private Machine delegate;
 
     public NativeMachine(
             Instance instance,
@@ -118,11 +116,6 @@ public final class NativeMachine implements Machine {
 
         // Allocate call context buffer
         ctxBuffer = arena.allocate(CTX_SIZE, 8);
-
-        // Register ctxBuffer with NativeMemory so grow() updates MEMORY_PAGES
-        if (instance.memory() instanceof NativeMemory nativeMemory) {
-            nativeMemory.setCtxBuffer(ctxBuffer);
-        }
 
         // Allocate function pointer table (one i64 per function)
         funcTable = arena.allocate((long) totalFuncs * 8, 8);
@@ -242,21 +235,6 @@ public final class NativeMachine implements Machine {
                 downcalls[funcId] = null; // imports dispatch through call() directly
             }
 
-            // Create bridge stubs for functions not compiled natively.
-            // The CALL emitter writes args to ctxBuffer for ALL calls,
-            // so bridge stubs can read from ctxBuffer and delegate.
-            for (int i = 0; i < compiledCode.length; i++) {
-                if (compiledCode[i] == null) {
-                    int funcId = numImports + i;
-                    var funcType =
-                            (FunctionType)
-                                    module.typeSection()
-                                            .getType(module.functionSection().getFunctionType(i));
-                    MemorySegment stub = createImportStub(funcId, funcType);
-                    funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, stub.address());
-                }
-            }
-
         } catch (Throwable e) {
             throw new ChicoryException("Failed to set up native code", e);
         }
@@ -270,15 +248,6 @@ public final class NativeMachine implements Machine {
         this.cleanable =
                 CLEANER.register(
                         this, new CleanupAction(arena, codeRegion, codeRegionSize, nativeMemory));
-    }
-
-    /**
-     * Sets the delegate machine for cross-boundary dispatch.
-     * Bridge stubs for non-natively-compiled functions route through
-     * {@code importDispatchDirect} which delegates to this machine.
-     */
-    public void setDelegate(Machine delegate) {
-        this.delegate = delegate;
     }
 
     /** Explicitly release all native resources (arena + code region). Idempotent. */
@@ -489,12 +458,8 @@ public final class NativeMachine implements Machine {
                 var importFunc = instance.imports().function(funcId);
                 long[] result = importFunc.handle().apply(instance, args);
                 return (result != null && result.length > 0) ? result[0] : 0L;
-            } else if (delegate != null) {
-                long[] result = delegate.call(funcId, args);
-                return (result != null && result.length > 0) ? result[0] : 0L;
-            } else {
-                throw new ChicoryException("Function " + funcId + " not compiled");
             }
+            throw new ChicoryException("Function " + funcId + " not compiled");
         } catch (Throwable t) {
             pendingException = t;
             return 0L;
@@ -903,12 +868,6 @@ public final class NativeMachine implements Machine {
         }
 
         var handle = downcalls[funcId];
-        if (handle == null) {
-            if (delegate != null) {
-                return delegate.call(funcId, args);
-            }
-            throw new ChicoryException("Function " + funcId + " not compiled");
-        }
 
         try {
             var funcType = (FunctionType) instance.type(instance.functionType(funcId));
