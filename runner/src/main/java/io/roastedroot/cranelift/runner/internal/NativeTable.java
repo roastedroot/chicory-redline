@@ -97,11 +97,26 @@ public final class NativeTable extends TableInstance {
      * Returns true if resolved, false if not (instance is null or not NativeMachine).
      */
     private boolean resolveFromInstance(int index, int funcId, Instance instance) {
-        if (instance != null && instance.getMachine() instanceof NativeMachine nm) {
+        if (instance == null) {
+            return false;
+        }
+        NativeMachine nm = getNativeMachine(instance);
+        if (nm != null) {
             writeResolvedEntry(index, funcId, nm.getFuncTable(), nm.getFuncTypesArray());
             return true;
         }
         return false;
+    }
+
+    private static NativeMachine getNativeMachine(Instance instance) {
+        var machine = instance.getMachine();
+        if (machine instanceof NativeMachine nm) {
+            return nm;
+        }
+        if (machine instanceof HybridMachine hm) {
+            return hm.nativeMachine();
+        }
+        return null;
     }
 
     /** Get the native address of the table buffer, for passing to native code. */

@@ -28,6 +28,11 @@ public final class HybridMachine implements Machine {
         this.numImports = numImports;
     }
 
+    /** Package-private: used by NativeTable to resolve funcId → funcPtr. */
+    NativeMachine nativeMachine() {
+        return nativeMachine;
+    }
+
     @Override
     public long[] call(int funcId, long[] args) throws ChicoryException {
         if (funcId < numImports) {
