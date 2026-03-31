@@ -2,7 +2,6 @@ package io.roastedroot.cranelift.runner.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.tools.wasm.Wat2Wasm;
 import com.dylibso.chicory.wasm.Parser;
 import io.roastedroot.cranelift.runner.NativeMachineFactory;
@@ -22,24 +21,15 @@ public class FactoryReuseTest {
                         + ")";
 
         var module = Parser.parse(Wat2Wasm.parse(wat));
-        var factory = new NativeMachineFactory(module);
 
         for (int i = 0; i < 3; i++) {
-            var instance =
-                    Instance.builder(module)
-                            .withMachineFactory(factory::compile)
-                            .withTableFactory(factory::createTable)
-                            .withGlobalFactory(factory::createGlobal)
-                            .withMemoryFactory(NativeMachineFactory::createMemory)
-                            .build();
-
-            // Each instance should start fresh — global starts at 0
-            var inc = instance.export("inc");
-            assertEquals(1L, inc.apply()[0], "iteration " + i + ": first inc");
-            assertEquals(2L, inc.apply()[0], "iteration " + i + ": second inc");
+            try (var ni = NativeMachineFactory.builder(module).build()) {
+                // Each instance should start fresh — global starts at 0
+                var inc = ni.instance().export("inc");
+                assertEquals(1L, inc.apply()[0], "iteration " + i + ": first inc");
+                assertEquals(2L, inc.apply()[0], "iteration " + i + ": second inc");
+            }
         }
-
-        factory.close();
     }
 
     @Test
@@ -57,22 +47,13 @@ public class FactoryReuseTest {
                         + ")";
 
         var module = Parser.parse(Wat2Wasm.parse(wat));
-        var factory = new NativeMachineFactory(module);
 
         for (int i = 0; i < 3; i++) {
-            var instance =
-                    Instance.builder(module)
-                            .withMachineFactory(factory::compile)
-                            .withTableFactory(factory::createTable)
-                            .withGlobalFactory(factory::createGlobal)
-                            .withMemoryFactory(NativeMachineFactory::createMemory)
-                            .build();
-
-            var callTable = instance.export("call_table");
-            assertEquals(42L, callTable.apply(0)[0], "iteration " + i + ": f1");
-            assertEquals(99L, callTable.apply(1)[0], "iteration " + i + ": f2");
+            try (var ni = NativeMachineFactory.builder(module).build()) {
+                var callTable = ni.instance().export("call_table");
+                assertEquals(42L, callTable.apply(0)[0], "iteration " + i + ": f1");
+                assertEquals(99L, callTable.apply(1)[0], "iteration " + i + ": f2");
+            }
         }
-
-        factory.close();
     }
 }

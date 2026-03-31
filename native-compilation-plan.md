@@ -24,18 +24,15 @@ through EmitContext. NativeCompiler is a thin orchestrator.
 
 ### Strategy: all-native compilation via Cranelift
 
-All Wasm functions are compiled to native machine code via Cranelift. No hybrid
-dispatch — Cranelift4J compiles the entire module. A hybrid approach (mixing
-Cranelift native with Chicory JVM bytecode based on HotSpot's HugeMethodLimit)
-was explored and rejected after benchmarking showed no performance benefit over
-all-native, while adding significant complexity (see "Completed" section).
+All Wasm functions are compiled to native machine code via Cranelift.
+Cranelift4J compiles the entire module — no interpreter fallback at runtime.
 
 ## Module structure
 
 ```
 wasm-build/                             Rust Cranelift FFI wrapper
 ├── Cargo.toml
-└── src/lib.rs                          ~1430 lines, flat Wasm exports
+└── src/lib.rs                          ~1450 lines, flat Wasm exports
 
 bridge/                                 Java bridge module (Java 11)
 ├── pom.xml
@@ -44,13 +41,16 @@ bridge/                                 Java bridge module (Java 11)
 
 compiler/                               Compilation logic (Java 11, no Panama)
 ├── pom.xml
-├── src/main/java/.../compiler/internal/
-│   ├── NativeCompiler.java             Thin orchestrator (analyzer -> emitters)
-│   ├── NativeAnalyzer.java             Pre-pass: reachability via exitBlockDepth
-│   ├── NativeValueStack.java           Scope-aware Cranelift value ID stack
-│   ├── NativeEmitters.java             Static opcode emission methods
-│   ├── EmitContext.java                Shared state for emitters
-│   └── CtxBuffer.java                  ctxBuffer layout constants (256 bytes)
+├── src/main/java/.../compiler/
+│   ├── CraneliftTarget.java            Target triples + host detection
+│   ├── NativeCodeSerializer.java       Serialization for precompiled code
+│   └── internal/
+│       ├── NativeCompiler.java         Thin orchestrator (analyzer -> emitters)
+│       ├── NativeAnalyzer.java         Pre-pass: reachability via exitBlockDepth
+│       ├── NativeValueStack.java       Scope-aware Cranelift value ID stack
+│       ├── NativeEmitters.java         Static opcode emission methods
+│       ├── EmitContext.java            Shared state for emitters
+│       └── CtxBuffer.java             ctxBuffer layout constants (256 bytes)
 └── src/test/java/                      UnsupportedOpcodeTest
 
 runner/                                 Runtime execution (Java 25, Panama FFM)
@@ -60,21 +60,19 @@ runner/                                 Runtime execution (Java 25, Panama FFM)
 │   ├── NativeMachineFactory.java       Public API (AutoCloseable, shared Arena)
 ├── src/main/java/.../runner/internal/
 │   ├── NativeMachine.java              Machine impl with Panama downcalls + Cleaner
-│   ├── HybridMachine.java              boolean[] dispatch at call() entry point
 │   ├── NativeTable.java                Off-heap 16-byte anyfunc table entries
 │   ├── NativeMemory.java               Off-heap memory via Panama
 │   ├── NativeGlobalInstance.java        Off-heap globals buffer
 │   └── PanamaExecutor.java             mmap/mprotect helpers
-└── src/test/java/                      Unit tests + spec tests (~28022 tests)
+└── src/test/java/                      Unit tests + spec tests (~28023 tests)
 
 build-time-compiler/                    Build-time API (Java 11)
-├── Generator.java                      Generates .native/.meta/.dispatch + source
-├── CodeLengthAnalyzer.java             Parses code_length from Code attribute (ASM)
-└── DispatchSerializer.java             Serializes boolean[] dispatch map
+├── Config.java                         Configuration for build-time compilation
+└── Generator.java                      Generates .native/.meta + source
 
-compiler-maven-plugin/                  Maven plugin (Java 11, <threshold> config)
-integration-tests/                      Maven Invoker IT (toml2json safe/fast/builder)
-jmh/                                    JMH benchmarks (safe vs fast vs allNative)
+compiler-maven-plugin/                  Maven plugin (Java 11)
+integration-tests/                      Maven Invoker IT (toml2json)
+jmh/                                    JMH benchmarks (bytecode vs native)
 wasm/                                   Shared wasm files + Rust source (toml2json)
 
 cranelift_bridge.wasm                   Pre-built Wasm binary (~5MB, root level)
@@ -82,7 +80,7 @@ cranelift_bridge.wasm                   Pre-built Wasm binary (~5MB, root level)
 
 ## Current state
 
-**28022 tests, 0 failures, 0 errors, 104 skipped**. Requires Java 25 for runner.
+**28023 tests, 0 failures, 0 errors, 41 skipped**. Requires Java 25 for runner.
 Compiler module is Java 11 — usable by Maven plugin on any JDK >= 11.
 Cross-compilation: all 6 targets by default (Linux/macOS/Windows × x86_64/aarch64).
 CI: ubuntu x86_64, ubuntu arm64, macOS arm64, Windows x86_64.
@@ -93,32 +91,29 @@ Public API — generated by Maven plugin (`cranelift-compiler-maven-plugin`):
 try (var ni = MyModule.builder().build()) {
     var result = ni.instance().export("func").apply();
 }
-
-// Explicit mode selection
-try (var ni = MyModule.fast().build()) {   // all-native via Cranelift
-    var instance = ni.instance();          // access underlying Chicory Instance
-}
 ```
 
 Direct API (`io.roastedroot.cranelift.runner.NativeMachineFactory`):
 ```java
-var factory = new NativeMachineFactory(module);
-Instance.builder(module)
-    .withMachineFactory(factory::compile)
-    .withTableFactory(factory::createTable)
-    .withGlobalFactory(factory::createGlobal)
-    .withMemoryFactory(NativeMachineFactory::createMemory)
-    .build();
+// Runtime compilation
+try (var ni = NativeMachineFactory.builder(module).build()) {
+    ni.instance().export("func").apply();
+}
+
+// Precompiled (from Maven plugin)
+try (var ni = NativeMachineFactory.builder(module, precompiledCode)
+        .withImportValues(imports)
+        .build()) {
+    ni.instance().export("func").apply();
+}
 ```
 
-### Skipped tests (103 — error-path only)
+### Skipped tests (41 — error-path only)
 
 All skipped tests are assert_trap or validation tests. Zero happy-path failures.
 
 | Category | Count | Root cause |
 |---|---|---|
-| conversions.wast trunc | 35 | Float trunc overflow: NaN-only check, not range |
-| address.wast OOB | 28 | Large static offset + addr overflows i32 bounds check |
 | binary.wast validation | 10 | Parser: MalformedException not thrown |
 | imports.wast | 10 | Mix: OOB, setup, validation |
 | align.wast validation | 5 | Parser: MalformedException vs InvalidException |
@@ -150,124 +145,23 @@ Native:        911,764 ops/s  (144x)   <- within 9% of JVM compiled
 ### Benchmark results (toml2json, 237KB, 279 functions)
 
 ```
-safe (bytecode only):       6,813 ops/s  (1x)
-fast (threshold=8000):     45,095 ops/s  (6.6x)   <- 3/279 funcs native
-allNative (threshold=0):   44,111 ops/s  (6.5x)   <- all 279 funcs native
+bytecode only:   6,813 ops/s  (1x)
+native:         44,111 ops/s  (6.5x)   <- all 279 funcs native
 ```
-
-Hybrid dispatch achieves parity with all-native on toml2json.
-
-### Decision: all-native only, remove hybrid machine
-
-After extensive benchmarking and profiling on both toml2json and sqlite4j2, the
-hybrid machine approach (mixing Cranelift native + Chicory bytecode) adds
-complexity without performance benefit:
-
-- **toml2json**: `fast ≈ allNative` (45,095 vs 44,111 ops/s) — no benefit from
-  hybrid dispatch, the overhead of switching on `call_indirect` is negligible
-  but also pointless since all-native is equally fast.
-- **sqlite4j2**: profiling with threshold=0 (all-native) shows the native
-  compiler handles the full 849KB module correctly. The hybrid dispatch adds
-  overhead from bridge stubs, upcalls, and HybridMachine routing with no
-  measurable improvement over pure native.
-- The hybrid machine adds significant complexity: `HybridMachine`,
-  `HybridMachineFactory`, `CodeLengthAnalyzer`, dispatch serialization,
-  bridge stubs for `call_indirect`, bytecode `.class` packaging, threshold
-  configuration, and multiple code paths to maintain.
-
-**Decision**: Remove the hybrid machine. The `fast()` API becomes all-native
-(equivalent to current threshold=0). The `safe()` API remains pure Chicory
-bytecode as a fallback for unsupported platforms. This simplifies the codebase
-and lets us focus on improving the native compiler.
 
 ## Next priorities
 
-### P0: Remove hybrid machine — DONE
+### P2: aarch64 large-sig ABI mismatch (SpecV1FuncTest.test85) — likely fixed
 
-Hybrid dispatch machinery removed in commit 2ded31f. All-native only.
+Root cause found: `CallConv::SystemV` was hardcoded in `create_function()` and
+`begin_sig()`. On aarch64-apple-darwin, Panama uses Apple's ARM64 ABI, but
+Cranelift was generating SystemV code — different register/stack assignment rules.
 
-### P1: Windows support
-
-PanamaExecutor uses mmap/mprotect/munmap which don't exist on Windows.
-Need to implement equivalent using Windows API via Panama:
-- `VirtualAlloc` (reserve + commit) instead of mmap
-- `VirtualProtect` instead of mprotect
-- `VirtualFree` instead of munmap
-
-Cranelift already supports `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`
-targets (compilation works), but the runner can't execute native code on Windows
-until PanamaExecutor is ported.
-
-Tasks:
-- [ ] Add VirtualAlloc/VirtualProtect/VirtualFree downcall handles to PanamaExecutor
-- [ ] Detect OS at init, use mmap path on Linux/macOS, VirtualAlloc path on Windows
-- [ ] Add Windows targets back to CraneliftTarget.ALL_TARGETS
-- [ ] Re-enable windows-latest in CI matrix
-
-### P1: Rust bridge cleanup
-
-- [x] Guard `wasm_malloc(0)` — `std::alloc::alloc` with zero-sized layout is UB
-- [x] Clear `Session` vecs after `compile()` to free memory between compilations
-- [x] Add null guard in `b()` for clear error if builder is used after `compile()`
-- [ ] Pin `interpretedFunctions` in `bridge/pom.xml` (currently `interpreterFallback=WARN`,
-  kept because bridge wasm legitimately has functions too large for JVM bytecode)
-
-### P2: Cache ctxBuffer memBase writes
-
-Currently memBase is written to ctxBuffer on every `call()`. With mmap,
-memBase never changes — write once at setup, save one off-heap write per call.
-(MEMORY_PAGES is now handled by `NativeMemory.grow()` via `setCtxBuffer()`.)
-
-### P2: Fix address.wast OOB (28 skipped tests)
-
-Bounds check uses `addr + offset + accessSize > memPages * 65536` with i32 addr.
-When static offset is large (e.g. 65536), `addr + offset` overflows i32. Fix:
-use i64 for the bounds computation.
-
-### P2: Fix conversions.wast trunc overflow (35 skipped tests)
-
-Current float-to-int trunc only checks NaN (fcmp NE x,x). Need range check:
-`x < INT_MIN_as_float || x > INT_MAX_as_float -> trap`. Each trunc variant
-(i32/i64 x f32/f64 x signed/unsigned) has different range bounds.
-
-### P2: aarch64 large-sig ABI mismatch (SpecV1FuncTest.test85)
-
-`large-sig` function: 17 mixed-type params (i32/i64/f32/f64), 16 mixed-type
-returns. On aarch64-apple-darwin, result[12] gets the wrong value — returns
-`0x41800000` (16.0f raw bits) instead of `15` (i32). Passes on x86_64.
-
-Likely cause: register assignment mismatch between Panama's downcall handle
-(Apple ARM64 ABI) and Cranelift's generated code for this many mixed params.
-ARM64 uses separate integer (x0-x7) and float (d0-d7) register files; with
-19 total params (17 + memBase + ctxPtr), many spill to stack. Off-by-one in
-stack slot assignment.
-
-Could be a Cranelift bug — check Cranelift issue tracker for known aarch64
-ABI issues with large mixed-type signatures.
-
-### P2: NativeMemory mmap reservation leak — DONE
-
-The mmap/mprotect approach reserves up to 2GB virtual address space per instance
-(PROT_NONE, no physical RAM committed). When instances are never explicitly
-closed (e.g. generated code creates factory as local var), the reservations
-accumulate. Cleaner fires on GC but GC doesn't feel off-heap pressure.
-
-**Fix:** `NativeInstance` — an `AutoCloseable` wrapper around `Instance` +
-`NativeMachineFactory`. Generated code (`fast()`, `builder()`) now returns
-`NativeInstance.Builder` instead of `Instance.Builder`. Consumers use
-try-with-resources or call `close()` explicitly. `NativeInstance.instance()`
-provides access to the underlying Chicory `Instance`.
-
-Test: `NativeInstanceTest.shouldReleaseResourcesOnClose` — creates 20 instances
-with try-with-resources, verifies VmSize stays bounded. Validated on sqlite4j2:
-full test suite runs without crashing the machine (previously OOM'd).
-
-### P2: Upcall exception propagation (sqlite4j2 UDFCustomErrorTest) — DONE
-
-Checked exceptions from host functions (upcalls) were wrapped in
-`ChicoryException`. Fixed with `sneakyThrow()` in both the pendingException
-check and the outer catch block of `call()`. Now checked exceptions like
-`SQLException` propagate cleanly through native calls.
+**Fix applied:** use `ISA.default_call_conv()` instead of hardcoding. This returns
+`AppleAarch64` for macOS ARM64, `WindowsFastcall` for Windows, `SystemV` for Linux.
+Verified no regression on x86_64 (28023 tests pass). Needs CI validation on
+aarch64-apple-darwin to confirm test85 passes. If it does, remove from skipped
+tests and move to Completed.
 
 ### P2: Thread safety in NativeMachine (sqlite4j2 UDFTest.multipleThreads)
 
@@ -316,29 +210,54 @@ type-safety.
 Current memory.copy/fill go through Java trampoline (native -> upcall -> Java).
 Emit as native `memmove`/`memset` with inline OOB checks — no trampoline needed.
 
+### P2: Windows support
+
+PanamaExecutor uses mmap/mprotect/munmap which don't exist on Windows.
+Need to implement equivalent using Windows API via Panama:
+- `VirtualAlloc` (reserve + commit) instead of mmap
+- `VirtualProtect` instead of mprotect
+- `VirtualFree` instead of munmap
+
+Cranelift already supports `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`
+targets (compilation works), but the runner can't execute native code on Windows
+until PanamaExecutor is ported. The calling convention fix (`ISA.default_call_conv()`)
+already handles `WindowsFastcall` for Windows targets.
+
+Tasks:
+- [ ] Add VirtualAlloc/VirtualProtect/VirtualFree downcall handles to PanamaExecutor
+- [ ] Detect OS at init, use mmap path on Linux/macOS, VirtualAlloc path on Windows
+- [ ] Add Windows targets back to CraneliftTarget.ALL_TARGETS
+- [ ] Re-enable windows-latest in CI matrix
+
 ## Completed
 
-- **Hybrid Machine (explored, rejected — to be removed, see P0)**: Explored
-  per-function dispatch between Cranelift native and Chicory bytecode based on
-  `code_length` threshold (HotSpot `HugeMethodLimit`). Multiple approaches tried:
-  - Selective compilation (only compile native-selected functions): 20x regression
-    from bridge stub overhead on direct `call` (1,731 vs 35,869 ops/s)
-  - All compiled + entry-point-only dispatch: fast ≈ allNative on toml2json
-    (45,095 vs 44,111) — no benefit, just complexity
-  - All compiled + `call_indirect` routing via NativeTable bridge stubs:
-    fast ≈ allNative — negligible overhead but also no improvement
-  - sqlite4j2 profiling: hybrid adds overhead without measurable benefit
-  **Conclusion**: all-native (threshold=0) is always the right choice. Hybrid
-  dispatch adds complexity (HybridMachine, dispatch maps, bridge stubs,
-  CodeLengthAnalyzer, bytecode packaging) with no performance benefit.
-  Decision: remove hybrid machinery, focus on native compiler.
+- **Hybrid machine (explored and removed)**: Per-function dispatch between
+  Cranelift native and Chicory bytecode was explored and rejected — all-native
+  is equally fast with less complexity. Removed in commit 2ded31f.
+- **NativeInstance AutoCloseable**: Wrapper around Instance + NativeMachineFactory
+  for deterministic resource cleanup. Prevents mmap reservation leaks.
+  Validated on sqlite4j2 (full test suite without OOM).
+- **Upcall exception propagation**: Checked exceptions from host functions now
+  propagate cleanly through native calls via `sneakyThrow()`.
+- **Rust bridge cleanup**: malloc(0) guard, session vec cleanup after compile(),
+  null guard in `b()` for post-compile usage.
+- **Cache ctxBuffer memBase**: memBase address (stable with mmap) written once on
+  first call instead of every call. MEMORY_PAGES still refreshed per call.
+- **Fix address.wast OOB (28 tests)**: `offset + accessSize` computed as `long`
+  via `Integer.toUnsignedLong()` to prevent i32 overflow with large offsets.
+- **Fix conversions.wast trunc overflow (35 tests)**: Added proper range checks
+  to `emitSafeTrunc` — separate NaN trap ("invalid conversion to integer") and
+  overflow trap ("integer overflow") with per-variant float boundary constants.
+- **Fluent Direct API**: `NativeMachineFactory.builder(module).build()` replaces
+  the verbose `new NativeInstance.Builder(Instance.builder(module)..., factory)`
+  pattern. Builder supports `withImportValues`, `withMemoryLimits`, etc.
 - **Benchmark correctness**: memBase reload after calls, br_table via JumpTable
 - **Factory reuse**: globalIndex reset, nativeTables clear between instances
 - **invokeExact**: replaced `invokeWithArguments` + `Object[]` boxing with
   pre-adapted `MethodHandle`s and `invokeExact`. Also switched PanamaExecutor
   (mmap/mprotect/munmap) to `invokeExact`.
-- **Public API**: moved `NativeMachineFactory` to `io.roastedroot.cranelift.compiler`,
-  added `createMemory()` static method
+- **Public API**: `NativeMachineFactory` in `io.roastedroot.cranelift.runner`,
+  with `createMemory()` static method
 - **Rust bridge**: avoided cloning `Function` in `compile()` via `std::mem::replace`
 - **Compile-time failure**: all compilation errors (unsupported opcodes, bridge
   crashes) now throw `ChicoryException` at instantiation time instead of silently
@@ -393,10 +312,10 @@ mvn clean install -DskipTests && mvn install -pl runner -Dtest=SpecV1ConstTest
 # Compiler-only tests (UnsupportedOpcodeTest)
 mvn clean install -DskipTests && mvn install -pl compiler
 
-# Integration tests (toml2json — safe/fast/builder modes)
+# Integration tests (toml2json)
 mvn clean install -DskipTests && mvn install -pl integration-tests
 
-# JMH benchmarks (safe vs fast vs allNative)
+# JMH benchmarks (bytecode vs native)
 mvn clean install -DskipTests && jmh/run.sh
 
 # Rebuild toml2json wasm (only when lib.rs changes)

@@ -50,7 +50,7 @@ public class BenchmarkToml2Json {
 
         @Setup(Level.Trial)
         public void setup() {
-            var ni = Toml2JsonModule.fast().build();
+            var ni = Toml2JsonModule.builder().build();
             instance = ni.instance();
             var allocate = instance.export("allocate");
             toml2json = instance.export("toml2json");

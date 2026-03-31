@@ -42,14 +42,9 @@ public class NativeMemoryLeakTest {
         long vmBefore = readVmSizeKb();
 
         for (int i = 0; i < 20; i++) {
-            var factory = new NativeMachineFactory(module);
-            com.dylibso.chicory.runtime.Instance.builder(module)
-                    .withMachineFactory(factory::compile)
-                    .withTableFactory(factory::createTable)
-                    .withGlobalFactory(factory::createGlobal)
-                    .withMemoryFactory(NativeMachineFactory::createMemory)
-                    .build();
-            factory.close();
+            try (var ni = NativeMachineFactory.builder(module).build()) {
+                // just create and close
+            }
         }
 
         long vmAfter = readVmSizeKb();

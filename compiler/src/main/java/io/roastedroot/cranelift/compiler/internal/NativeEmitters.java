@@ -269,7 +269,7 @@ final class NativeEmitters {
 
     // --- Safe Float Truncation ---
 
-    static void emitSafeTrunc(EmitContext ctx, int targetType, boolean signed) {
+    static void emitSafeTrunc(EmitContext ctx, int targetType, int sourceType, boolean signed) {
         int fval = ctx.valueStack.pop();
 
         int satResult =
@@ -277,15 +277,80 @@ final class NativeEmitters {
                         ? ctx.bridge.exports().emitFcvtToSintSat(targetType, fval)
                         : ctx.bridge.exports().emitFcvtToUintSat(targetType, fval);
 
-        int isNan = ctx.bridge.exports().emitFcmp(1, fval, fval); // NE → true if NaN
-        int trapBlock = ctx.bridge.exports().createBlock();
-        int okBlock = ctx.bridge.exports().createBlock();
-        ctx.bridge.exports().emitBrif(isNan, trapBlock, okBlock);
+        // NaN check: fcmp NE x,x → true if NaN
+        int isNan = ctx.bridge.exports().emitFcmp(1, fval, fval);
+        int nanTrapBlock = ctx.bridge.exports().createBlock();
+        int rangeCheckBlock = ctx.bridge.exports().createBlock();
+        ctx.bridge.exports().emitBrif(isNan, nanTrapBlock, rangeCheckBlock);
+        fillTrapBlock(ctx, nanTrapBlock, CtxBuffer.TRAP_TRUNC_NAN);
 
-        fillTrapBlock(ctx, trapBlock, CtxBuffer.TRAP_TRUNC_OVERFLOW);
+        // Range check: trap if value is out of representable integer range
+        ctx.bridge.exports().switchToBlock(rangeCheckBlock);
+        int tooHigh = emitTruncUpperCheck(ctx, fval, targetType, sourceType, signed);
+        int tooLow = emitTruncLowerCheck(ctx, fval, targetType, sourceType, signed);
+        int outOfRange = ctx.bridge.exports().emitBor(tooHigh, tooLow);
+        int overflowTrapBlock = ctx.bridge.exports().createBlock();
+        int okBlock = ctx.bridge.exports().createBlock();
+        ctx.bridge.exports().emitBrif(outOfRange, overflowTrapBlock, okBlock);
+
+        fillTrapBlock(ctx, overflowTrapBlock, CtxBuffer.TRAP_TRUNC_OVERFLOW);
 
         ctx.bridge.exports().switchToBlock(okBlock);
         ctx.valueStack.push(satResult);
+    }
+
+    // Emit: fval >= upperBound (GE=5)
+    private static int emitTruncUpperCheck(
+            EmitContext ctx, int fval, int targetType, int sourceType, boolean signed) {
+        if (sourceType == 2 /* F32 */) {
+            float bound;
+            if (targetType == 0 /* I32 */) {
+                bound = signed ? 2147483648.0f : 4294967296.0f;
+            } else {
+                bound = signed ? 9223372036854775808.0f : 18446744073709551616.0f;
+            }
+            int c = ctx.bridge.exports().emitF32const(Float.floatToRawIntBits(bound));
+            return ctx.bridge.exports().emitFcmp(5, fval, c); // GE
+        } else {
+            double bound;
+            if (targetType == 0 /* I32 */) {
+                bound = signed ? 2147483648.0 : 4294967296.0;
+            } else {
+                bound = signed ? 9223372036854775808.0 : 18446744073709551616.0;
+            }
+            long bits = Double.doubleToRawLongBits(bound);
+            int c = ctx.bridge.exports().emitF64const((int) bits, (int) (bits >>> 32));
+            return ctx.bridge.exports().emitFcmp(5, fval, c); // GE
+        }
+    }
+
+    // Emit: fval <= lowerBound (LE=4)
+    private static int emitTruncLowerCheck(
+            EmitContext ctx, int fval, int targetType, int sourceType, boolean signed) {
+        if (sourceType == 2 /* F32 */) {
+            float bound;
+            if (signed) {
+                // For signed: trap if val < MIN (use LE with MIN - 1 equivalent)
+                // i32: -2147483648.0f is exactly representable, trap if val < it
+                // i64: -9223372036854775808.0f is exactly representable
+                bound = targetType == 0 /* I32 */ ? -2147483904.0f : -9223373136366403584.0f;
+                // Use LE: trap if fval <= bound (since bound is just below MIN)
+            } else {
+                bound = -1.0f;
+            }
+            int c = ctx.bridge.exports().emitF32const(Float.floatToRawIntBits(bound));
+            return ctx.bridge.exports().emitFcmp(4, fval, c); // LE
+        } else {
+            double bound;
+            if (signed) {
+                bound = targetType == 0 /* I32 */ ? -2147483649.0 : -9223372036854777856.0;
+            } else {
+                bound = -1.0;
+            }
+            long bits = Double.doubleToRawLongBits(bound);
+            int c = ctx.bridge.exports().emitF64const((int) bits, (int) (bits >>> 32));
+            return ctx.bridge.exports().emitFcmp(4, fval, c); // LE
+        }
     }
 
     // --- Trap helper ---
@@ -359,11 +424,17 @@ final class NativeEmitters {
     private static void emitBoundsCheck(EmitContext ctx, int addr, int offset, int accessSize) {
         // Compute effective end address as i64 to avoid i32 overflow
         int addr64 = ctx.bridge.exports().emitUextendI64(addr);
+        long endOffset = Integer.toUnsignedLong(offset) + accessSize;
         int end =
                 ctx.bridge
                         .exports()
                         .emitIadd(
-                                addr64, ctx.bridge.exports().emitIconst64(offset + accessSize, 0));
+                                addr64,
+                                ctx.bridge
+                                        .exports()
+                                        .emitIconst64(
+                                                (int) (endOffset & 0xFFFFFFFFL),
+                                                (int) (endOffset >>> 32)));
 
         // Load memory size in bytes: memPages * 65536
         int zero = ctx.bridge.exports().emitIconst32(0);
@@ -968,9 +1039,7 @@ final class NativeEmitters {
         int failBlock = b.createBlock();
         int okBlock = b.createBlock();
         int mergeBlock = b.createBlock();
-        int mergeParam =
-                b.appendBlockParam(
-                        mergeBlock, io.roastedroot.cranelift.bridge.CraneliftBridge.TYPE_I32);
+        int mergeParam = b.appendBlockParam(mergeBlock, 0 /* TYPE_I32 */);
 
         b.emitBrif(fail, failBlock, okBlock);
 

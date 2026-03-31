@@ -12,8 +12,8 @@ class Toml2JsonTest {
     private static final String SAMPLE_TOML = "[package]\nname = \"test\"\nversion = \"1.0.0\"\n";
 
     @Test
-    void testFastMode() {
-        try (var ni = Toml2JsonModule.fast().build()) {
+    void testBuilderAutoDetect() {
+        try (var ni = Toml2JsonModule.builder().build()) {
             var result = convert(ni.instance(), SAMPLE_TOML);
             assertNotNull(result);
             assertTrue(
@@ -23,7 +23,7 @@ class Toml2JsonTest {
     }
 
     @Test
-    void testBuilderAutoDetect() {
+    void testBuilderTwice() {
         try (var ni = Toml2JsonModule.builder().build()) {
             var result = convert(ni.instance(), SAMPLE_TOML);
             assertNotNull(result);

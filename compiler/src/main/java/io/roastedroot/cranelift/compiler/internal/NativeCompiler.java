@@ -1038,28 +1038,36 @@ public final class NativeCompiler {
 
             // --- Conversions ---
             case I32_TRUNC_F32_S:
-                NativeEmitters.emitSafeTrunc(ctx, CraneliftBridge.TYPE_I32, true);
+                NativeEmitters.emitSafeTrunc(
+                        ctx, CraneliftBridge.TYPE_I32, CraneliftBridge.TYPE_F32, true);
                 break;
             case I32_TRUNC_F32_U:
-                NativeEmitters.emitSafeTrunc(ctx, CraneliftBridge.TYPE_I32, false);
+                NativeEmitters.emitSafeTrunc(
+                        ctx, CraneliftBridge.TYPE_I32, CraneliftBridge.TYPE_F32, false);
                 break;
             case I32_TRUNC_F64_S:
-                NativeEmitters.emitSafeTrunc(ctx, CraneliftBridge.TYPE_I32, true);
+                NativeEmitters.emitSafeTrunc(
+                        ctx, CraneliftBridge.TYPE_I32, CraneliftBridge.TYPE_F64, true);
                 break;
             case I32_TRUNC_F64_U:
-                NativeEmitters.emitSafeTrunc(ctx, CraneliftBridge.TYPE_I32, false);
+                NativeEmitters.emitSafeTrunc(
+                        ctx, CraneliftBridge.TYPE_I32, CraneliftBridge.TYPE_F64, false);
                 break;
             case I64_TRUNC_F32_S:
-                NativeEmitters.emitSafeTrunc(ctx, CraneliftBridge.TYPE_I64, true);
+                NativeEmitters.emitSafeTrunc(
+                        ctx, CraneliftBridge.TYPE_I64, CraneliftBridge.TYPE_F32, true);
                 break;
             case I64_TRUNC_F32_U:
-                NativeEmitters.emitSafeTrunc(ctx, CraneliftBridge.TYPE_I64, false);
+                NativeEmitters.emitSafeTrunc(
+                        ctx, CraneliftBridge.TYPE_I64, CraneliftBridge.TYPE_F32, false);
                 break;
             case I64_TRUNC_F64_S:
-                NativeEmitters.emitSafeTrunc(ctx, CraneliftBridge.TYPE_I64, true);
+                NativeEmitters.emitSafeTrunc(
+                        ctx, CraneliftBridge.TYPE_I64, CraneliftBridge.TYPE_F64, true);
                 break;
             case I64_TRUNC_F64_U:
-                NativeEmitters.emitSafeTrunc(ctx, CraneliftBridge.TYPE_I64, false);
+                NativeEmitters.emitSafeTrunc(
+                        ctx, CraneliftBridge.TYPE_I64, CraneliftBridge.TYPE_F64, false);
                 break;
 
             case I32_TRUNC_SAT_F32_S:

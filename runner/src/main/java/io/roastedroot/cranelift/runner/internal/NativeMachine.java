@@ -89,6 +89,8 @@ public final class NativeMachine implements Machine {
     private final int numImports;
     private final int globalCount;
     private boolean importGlobalsInitialized;
+    private MemorySegment cachedMemBase;
+    private boolean memBaseInitialized;
     private final Cleaner.Cleanable cleanable;
     // Pending exception from upcall stubs (cannot throw through native frames)
     private volatile Throwable pendingException;
@@ -806,8 +808,8 @@ public final class NativeMachine implements Machine {
             case CtxBuffer.TRAP_DIV_BY_ZERO -> new ChicoryException("integer divide by zero");
             case CtxBuffer.TRAP_INT_OVERFLOW -> new ChicoryException("integer overflow");
             case CtxBuffer.TRAP_UNREACHABLE -> new ChicoryException("unreachable");
-            case CtxBuffer.TRAP_TRUNC_OVERFLOW ->
-                    new ChicoryException("invalid conversion to integer");
+            case CtxBuffer.TRAP_TRUNC_OVERFLOW -> new ChicoryException("integer overflow");
+            case CtxBuffer.TRAP_TRUNC_NAN -> new ChicoryException("invalid conversion to integer");
             case CtxBuffer.TRAP_OOB -> new ChicoryException("out of bounds memory access");
             case CtxBuffer.TRAP_CALL_STACK_EXHAUSTED ->
                     new ChicoryException("call stack exhausted");
@@ -880,17 +882,26 @@ public final class NativeMachine implements Machine {
             initializeImportGlobals();
             initializeNativeTables();
 
-            MemorySegment memBase;
+            if (!memBaseInitialized) {
+                var mem = instance.memory();
+                if (mem instanceof NativeMemory nativeMemory) {
+                    cachedMemBase = nativeMemory.nativeAddress();
+                    ctxBuffer.set(
+                            ValueLayout.JAVA_LONG,
+                            CtxBuffer.MEM_BASE_ADDR,
+                            cachedMemBase.address());
+                } else {
+                    cachedMemBase = MemorySegment.NULL;
+                }
+                memBaseInitialized = true;
+            }
+            // MEMORY_PAGES can change via grow() — must refresh every call
             var mem = instance.memory();
-            if (mem instanceof NativeMemory nativeMemory) {
-                memBase = nativeMemory.nativeAddress();
-                ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.MEM_BASE_ADDR, memBase.address());
+            if (mem != null) {
                 ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.MEMORY_PAGES, mem.pages());
-            } else {
-                memBase = MemorySegment.NULL;
             }
 
-            long result = (long) handle.invokeExact(memBase, ctxBuffer, args);
+            long result = (long) handle.invokeExact(cachedMemBase, ctxBuffer, args);
 
             // Check for traps (pre-checks write trap code to ctxBuffer)
             int trapCode = ctxBuffer.get(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE);
