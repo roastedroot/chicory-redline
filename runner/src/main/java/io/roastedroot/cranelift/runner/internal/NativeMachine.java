@@ -276,6 +276,11 @@ public final class NativeMachine implements Machine {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private static <E extends Throwable> void sneakyThrow(Throwable e) throws E {
+        throw (E) e;
+    }
+
     private static long align(long value, long alignment) {
         return (value + alignment - 1) & ~(alignment - 1);
     }
@@ -898,13 +903,7 @@ public final class NativeMachine implements Machine {
             if (pendingException != null) {
                 var ex = pendingException;
                 pendingException = null;
-                if (ex instanceof ChicoryException ce) {
-                    throw ce;
-                }
-                if (ex instanceof RuntimeException re) {
-                    throw re;
-                }
-                throw new ChicoryException("Exception in native upcall", ex);
+                sneakyThrow(ex);
             }
 
             if (funcType.returns().isEmpty()) {
@@ -922,10 +921,11 @@ public final class NativeMachine implements Machine {
             }
 
             return new long[] {result};
-        } catch (ChicoryException e) {
+        } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new ChicoryException("Native call failed for func " + funcId, e);
+            sneakyThrow(e);
+            throw new AssertionError("unreachable");
         }
     }
 

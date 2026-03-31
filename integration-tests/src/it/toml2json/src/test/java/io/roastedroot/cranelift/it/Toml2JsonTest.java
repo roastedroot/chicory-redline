@@ -13,19 +13,23 @@ class Toml2JsonTest {
 
     @Test
     void testFastMode() {
-        var instance = Toml2JsonModule.fast().build();
-        var result = convert(instance, SAMPLE_TOML);
-        assertNotNull(result);
-        assertTrue(result.contains("\"package\""), "Expected JSON key 'package', got: " + result);
-        assertTrue(result.contains("\"test\""), "Expected JSON value 'test', got: " + result);
+        try (var ni = Toml2JsonModule.fast().build()) {
+            var result = convert(ni.instance(), SAMPLE_TOML);
+            assertNotNull(result);
+            assertTrue(
+                    result.contains("\"package\""), "Expected JSON key 'package', got: " + result);
+            assertTrue(result.contains("\"test\""), "Expected JSON value 'test', got: " + result);
+        }
     }
 
     @Test
     void testBuilderAutoDetect() {
-        var instance = Toml2JsonModule.builder().build();
-        var result = convert(instance, SAMPLE_TOML);
-        assertNotNull(result);
-        assertTrue(result.contains("\"package\""), "Expected JSON key 'package', got: " + result);
+        try (var ni = Toml2JsonModule.builder().build()) {
+            var result = convert(ni.instance(), SAMPLE_TOML);
+            assertNotNull(result);
+            assertTrue(
+                    result.contains("\"package\""), "Expected JSON key 'package', got: " + result);
+        }
     }
 
     private String convert(Instance instance, String toml) {
