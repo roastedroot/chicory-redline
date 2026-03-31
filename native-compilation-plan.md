@@ -132,7 +132,7 @@ All skipped tests are assert_trap or validation tests. Zero happy-path failures.
 | bazel-wasm-repro (toml2json) | 237KB | PASS | 279 funcs, ~80s compilation |
 | jq4j | 951KB | FAIL (9/21) | 24 funcs missing atomic opcodes |
 | prism (Ruby parser) | 564KB | PASS | 10x faster than Chicory AOT, build-time compilation via Maven plugin |
-| sqlite4j2 | 849KB | PASS | 4x faster than Chicory AOT, all-native, full test suite runs without OOM (NativeInstance AutoCloseable fix) |
+| sqlite4j2 | 849KB | PARTIAL (5/432 fail) | 4x faster than Chicory AOT, all-native, no OOM. 5 failures: thread safety, stack exhaustion, concurrent close |
 
 ### Benchmark results (iterFact, input=1000)
 
@@ -151,36 +151,23 @@ native:         44,111 ops/s  (6.5x)   <- all 279 funcs native
 
 ## Next priorities
 
+### P1: Verify sqlite4j2 remaining failures
+
+5 failures remain (432 tests, 405 pass, 21 skipped). Need to re-verify
+against current cranelift4j (fluent API, trunc/address fixes, memBase caching)
+and investigate root causes:
+
+1. **UDFTest.multipleThreads** — returns 0 instead of 1000. Thread safety
+   issue: multiple threads share `pendingException`, `argsBuffer`, `ctxBuffer`.
+2. **ConnectionTest.concurrentClose** — call stack exhausted (512 ResultSets).
+3. **PreparedStatementThreadTest** (×2) — SQLITE_BUSY on concurrent close.
+4. **TransactionTest.secondConnWillWait** — timing-dependent flaky test.
+
 ### P2: aarch64 large-sig ABI mismatch (SpecV1FuncTest.test85) — likely fixed
 
-Root cause found: `CallConv::SystemV` was hardcoded in `create_function()` and
-`begin_sig()`. On aarch64-apple-darwin, Panama uses Apple's ARM64 ABI, but
-Cranelift was generating SystemV code — different register/stack assignment rules.
-
-**Fix applied:** use `ISA.default_call_conv()` instead of hardcoding. This returns
-`AppleAarch64` for macOS ARM64, `WindowsFastcall` for Windows, `SystemV` for Linux.
-Verified no regression on x86_64 (28023 tests pass). Needs CI validation on
-aarch64-apple-darwin to confirm test85 passes. If it does, remove from skipped
-tests and move to Completed.
-
-### P2: Thread safety in NativeMachine (sqlite4j2 UDFTest.multipleThreads)
-
-`UDFTest.multipleThreads` expects 1000 but gets 0. Multiple threads calling
-into the same NativeMachine instance likely share `pendingException`,
-`argsBuffer`, or `ctxBuffer` unsafely. Need to investigate thread-local
-state or synchronization in the native call path.
-
-### P2: Call stack exhaustion (sqlite4j2 ConnectionTest.concurrentClose)
-
-`concurrentClose` creates 512 ResultSets and closes them — exhausts the native
-call stack. May need to increase the default stack size for native code, or
-handle deep call chains differently.
-
-### P2: Concurrent close handling (sqlite4j2 PreparedStatementThreadTest)
-
-`SQLITE_BUSY` errors when closing connections/statements concurrently.
-May be an issue with NativeMachine not being safe for concurrent close
-operations, or SQLite locking semantics under native execution.
+Fix applied: `ISA.default_call_conv()` instead of hardcoded `SystemV`.
+Needs CI validation on aarch64-apple-darwin. If test85 passes, remove from
+skipped tests and move to Completed.
 
 ### P3: Disable runtime compilation when build-time compilation is used
 
@@ -231,6 +218,10 @@ Tasks:
 
 ## Completed
 
+- **aarch64 calling convention fix**: `ISA.default_call_conv()` instead of
+  hardcoded `CallConv::SystemV` in `create_function()` and `begin_sig()`.
+  Returns `AppleAarch64` for macOS ARM64, `WindowsFastcall` for Windows,
+  `SystemV` for Linux. Awaiting CI validation on aarch64 for test85.
 - **Hybrid machine (explored and removed)**: Per-function dispatch between
   Cranelift native and Chicory bytecode was explored and rejected — all-native
   is equally fast with less complexity. Removed in commit 2ded31f.
