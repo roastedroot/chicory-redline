@@ -39,18 +39,17 @@ public final class NativeMachineFactory implements AutoCloseable {
     private final Arena arena = Arena.ofShared();
     private final WasmModule module;
     private final byte[][] precompiledCode;
+    private final boolean runtimeCompilation;
     private final List<NativeTable> nativeTables = new ArrayList<>();
     private MemorySegment globalsBuffer;
     private int globalIndex;
     private NativeMachine nativeMachine;
 
-    private NativeMachineFactory(WasmModule module) {
-        this(module, null);
-    }
-
-    private NativeMachineFactory(WasmModule module, byte[][] precompiledCode) {
+    private NativeMachineFactory(
+            WasmModule module, byte[][] precompiledCode, boolean runtimeCompilation) {
         this.module = module;
         this.precompiledCode = precompiledCode;
+        this.runtimeCompilation = runtimeCompilation;
 
         // Pre-allocate globals buffer
         int importGlobalCount =
@@ -117,7 +116,13 @@ public final class NativeMachineFactory implements AutoCloseable {
         this.globalIndex = importGlobalCount;
         this.nativeTables.clear();
         this.nativeMachine =
-                new NativeMachine(instance, arena, nativeTables, globalsBuffer, precompiledCode);
+                new NativeMachine(
+                        instance,
+                        arena,
+                        nativeTables,
+                        globalsBuffer,
+                        precompiledCode,
+                        runtimeCompilation);
         return nativeMachine;
     }
 
@@ -148,18 +153,22 @@ public final class NativeMachineFactory implements AutoCloseable {
 
         private final WasmModule module;
         private final byte[][] precompiledCode;
+        private final boolean runtimeCompilation;
         private ImportValues importValues;
         private MemoryLimits memoryLimits;
         private boolean start = true;
         private boolean initialize = true;
 
         Builder(WasmModule module) {
-            this(module, null);
+            this.module = module;
+            this.precompiledCode = null;
+            this.runtimeCompilation = true;
         }
 
         Builder(WasmModule module, byte[][] precompiledCode) {
             this.module = module;
             this.precompiledCode = precompiledCode;
+            this.runtimeCompilation = false;
         }
 
         public Builder withImportValues(ImportValues importValues) {
@@ -183,7 +192,7 @@ public final class NativeMachineFactory implements AutoCloseable {
         }
 
         public NativeInstance build() {
-            var factory = new NativeMachineFactory(module, precompiledCode);
+            var factory = new NativeMachineFactory(module, precompiledCode, runtimeCompilation);
             var instanceBuilder =
                     Instance.builder(module)
                             .withMachineFactory(factory::compile)

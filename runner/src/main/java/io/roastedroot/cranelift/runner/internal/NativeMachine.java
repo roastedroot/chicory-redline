@@ -100,7 +100,8 @@ public final class NativeMachine implements Machine {
             Arena arena,
             java.util.List<NativeTable> sharedTables,
             MemorySegment sharedGlobalsBuffer,
-            byte[][] precompiledCode) {
+            byte[][] precompiledCode,
+            boolean runtimeCompilation) {
         this.instance = instance;
         this.arena = arena;
         var module = instance.module();
@@ -177,15 +178,20 @@ public final class NativeMachine implements Machine {
         ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.TABLE_PTRS, tablePtrsArray.address());
         ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.FUNC_TYPES_PTR, funcTypesArray.address());
 
-        // Compile all module-defined functions (or use pre-compiled code)
+        // Use pre-compiled code, or compile at runtime if explicitly enabled
         byte[][] compiledCode;
         if (precompiledCode != null) {
             compiledCode = precompiledCode;
-        } else {
+        } else if (runtimeCompilation) {
             var compiler =
                     new NativeCompiler(
                             io.roastedroot.cranelift.compiler.CraneliftTarget.detectHost(), module);
             compiledCode = compiler.compileAll();
+        } else {
+            throw new ChicoryException(
+                    "No precompiled code provided. Use the cranelift-compiler-maven-plugin"
+                            + " to precompile, or use NativeMachineFactory.builder(module)"
+                            + " for runtime compilation.");
         }
 
         // mmap all compiled code into a single executable region

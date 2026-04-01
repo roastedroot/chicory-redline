@@ -97,11 +97,10 @@ targets (compilation works), but the runner can't execute native code on Windows
 until PanamaExecutor is ported. The calling convention fix (`ISA.default_call_conv()`)
 already handles `WindowsFastcall` for Windows targets.
 
-### P3: Disable runtime compilation when build-time compilation is used
+### P3: Review public API
 
-When the Maven plugin has precompiled native code, the runner should never
-fall back to runtime compilation. Currently `NativeMachine` compiles at
-runtime if `precompiledCode == null`.
+Review the full public API surface of `NativeMachineFactory.Builder` for
+clarity and consistency.
 
 ## How to build and test
 
