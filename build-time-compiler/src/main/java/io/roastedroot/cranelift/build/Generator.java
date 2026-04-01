@@ -2,18 +2,45 @@ package io.roastedroot.cranelift.build;
 
 import static com.dylibso.chicory.wasm.Encoding.readVarUInt32;
 import static com.dylibso.chicory.wasm.WasmWriter.writeVarUInt32;
+import static com.github.javaparser.StaticJavaParser.parseClassOrInterfaceType;
+import static com.github.javaparser.StaticJavaParser.parseType;
+import static com.github.javaparser.ast.NodeList.nodeList;
 
 import com.dylibso.chicory.wasm.Parser;
+import com.dylibso.chicory.wasm.WasmModule;
 import com.dylibso.chicory.wasm.WasmWriter;
 import com.dylibso.chicory.wasm.types.OpCode;
 import com.dylibso.chicory.wasm.types.RawSection;
 import com.dylibso.chicory.wasm.types.SectionId;
+import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.Modifier;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.ClassExpr;
+import com.github.javaparser.ast.expr.FieldAccessExpr;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.NullLiteralExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.ast.expr.VariableDeclarationExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.ast.stmt.CatchClause;
+import com.github.javaparser.ast.stmt.ExpressionStmt;
+import com.github.javaparser.ast.stmt.IfStmt;
+import com.github.javaparser.ast.stmt.ReturnStmt;
+import com.github.javaparser.ast.stmt.ThrowStmt;
+import com.github.javaparser.ast.stmt.TryStmt;
 import io.roastedroot.cranelift.compiler.CraneliftTarget;
 import io.roastedroot.cranelift.compiler.NativeCodeSerializer;
 import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
 import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -154,81 +181,199 @@ public class Generator {
     }
 
     private static String generateSourceCode(String packageName, String baseName) {
-        return "package "
-                + packageName
-                + ";\n"
-                + "\n"
-                + "import com.dylibso.chicory.wasm.Parser;\n"
-                + "import com.dylibso.chicory.wasm.WasmModule;\n"
-                + "import io.roastedroot.cranelift.compiler.CraneliftTarget;\n"
-                + "import io.roastedroot.cranelift.compiler.NativeCodeSerializer;\n"
-                + "import io.roastedroot.cranelift.runner.NativeMachineFactory;\n"
-                + "import java.io.IOException;\n"
-                + "import java.io.InputStream;\n"
-                + "import java.io.UncheckedIOException;\n"
-                + "\n"
-                + "public final class "
-                + baseName
-                + " {\n"
-                + "\n"
-                + "    private "
-                + baseName
-                + "() {}\n"
-                + "\n"
-                + "    private static class WasmModuleHolder {\n"
-                + "\n"
-                + "        static final WasmModule INSTANCE;\n"
-                + "\n"
-                + "        static {\n"
-                + "            try (InputStream in =\n"
-                + "                    "
-                + baseName
-                + ".class.getResourceAsStream(\""
-                + baseName
-                + ".meta\")) {\n"
-                + "                INSTANCE = Parser.parse(in);\n"
-                + "            } catch (IOException e) {\n"
-                + "                throw new UncheckedIOException(\n"
-                + "                        \"Failed to load WASM module\", e);\n"
-                + "            }\n"
-                + "        }\n"
-                + "    }\n"
-                + "\n"
-                + "    private static class NativeCodeHolder {\n"
-                + "\n"
-                + "        static final byte[][] CODE;\n"
-                + "\n"
-                + "        static {\n"
-                + "            String suffix = CraneliftTarget.resourceSuffix(\n"
-                + "                    CraneliftTarget.detectHost());\n"
-                + "            String resource = \""
-                + baseName
-                + ".\" + suffix + \".native\";\n"
-                + "            try (InputStream in =\n"
-                + "                    "
-                + baseName
-                + ".class.getResourceAsStream(resource)) {\n"
-                + "                if (in == null) {\n"
-                + "                    throw new UnsupportedOperationException(\n"
-                + "                            \"No precompiled native code for platform: \"\n"
-                + "                                    + suffix);\n"
-                + "                }\n"
-                + "                CODE = NativeCodeSerializer.deserialize(in);\n"
-                + "            } catch (IOException e) {\n"
-                + "                throw new UncheckedIOException(\n"
-                + "                        \"Failed to load native code\", e);\n"
-                + "            }\n"
-                + "        }\n"
-                + "    }\n"
-                + "\n"
-                + "    public static WasmModule load() {\n"
-                + "        return WasmModuleHolder.INSTANCE;\n"
-                + "    }\n"
-                + "\n"
-                + "    public static NativeMachineFactory.Builder builder() {\n"
-                + "        return NativeMachineFactory.builder(\n"
-                + "                WasmModuleHolder.INSTANCE, NativeCodeHolder.CODE);\n"
-                + "    }\n"
-                + "}\n";
+        var cu = new CompilationUnit(packageName);
+        cu.addImport(Parser.class);
+        cu.addImport(WasmModule.class);
+        cu.addImport(CraneliftTarget.class);
+        cu.addImport(NativeCodeSerializer.class);
+        cu.addImport("io.roastedroot.cranelift.runner.NativeMachineFactory");
+        cu.addImport(IOException.class);
+        cu.addImport(InputStream.class);
+        cu.addImport(UncheckedIOException.class);
+
+        var mainClass = cu.addClass(baseName, Modifier.Keyword.PUBLIC, Modifier.Keyword.FINAL);
+        mainClass.addConstructor(Modifier.Keyword.PRIVATE);
+
+        generateWasmModuleHolderInnerClass(mainClass, baseName);
+        generateNativeCodeHolderInnerClass(mainClass, baseName);
+        generateLoadMethod(mainClass);
+        generateBuilderMethod(mainClass);
+
+        return cu.toString();
+    }
+
+    private static void generateWasmModuleHolderInnerClass(
+            ClassOrInterfaceDeclaration type, String baseName) {
+        var holderClass =
+                new ClassOrInterfaceDeclaration(
+                        nodeList(
+                                new Modifier(Modifier.Keyword.PRIVATE),
+                                new Modifier(Modifier.Keyword.STATIC)),
+                        false,
+                        "WasmModuleHolder");
+        type.addMember(holderClass);
+
+        holderClass.addField(
+                WasmModule.class, "INSTANCE", Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
+
+        // try (InputStream in = X.class.getResourceAsStream("X.meta")) {
+        //     INSTANCE = Parser.parse(in);
+        // } catch (IOException e) {
+        //     throw new UncheckedIOException("Failed to load WASM module", e);
+        // }
+        var getResource =
+                new MethodCallExpr(
+                        new ClassExpr(parseType(baseName)),
+                        "getResourceAsStream",
+                        nodeList(new StringLiteralExpr(baseName + ".meta")));
+        var resourceVar =
+                new VariableDeclarationExpr(
+                        new com.github.javaparser.ast.body.VariableDeclarator(
+                                parseType("InputStream"), "in", getResource));
+
+        var assignStmt =
+                new ExpressionStmt(
+                        new AssignExpr(
+                                new NameExpr("INSTANCE"),
+                                new MethodCallExpr(
+                                        new NameExpr("Parser"),
+                                        "parse",
+                                        nodeList(new NameExpr("in"))),
+                                AssignExpr.Operator.ASSIGN));
+
+        var catchClause = ioCatchClause("Failed to load WASM module");
+
+        var tryStmt =
+                new TryStmt()
+                        .setResources(nodeList(resourceVar))
+                        .setTryBlock(new BlockStmt(nodeList(assignStmt)))
+                        .setCatchClauses(nodeList(catchClause));
+
+        holderClass.addStaticInitializer().addStatement(tryStmt);
+    }
+
+    private static void generateNativeCodeHolderInnerClass(
+            ClassOrInterfaceDeclaration type, String baseName) {
+        var holderClass =
+                new ClassOrInterfaceDeclaration(
+                        nodeList(
+                                new Modifier(Modifier.Keyword.PRIVATE),
+                                new Modifier(Modifier.Keyword.STATIC)),
+                        false,
+                        "NativeCodeHolder");
+        type.addMember(holderClass);
+
+        holderClass.addField(
+                parseType("byte[][]"), "CODE", Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
+
+        // String suffix = CraneliftTarget.resourceSuffix(CraneliftTarget.detectHost());
+        var detectHost = new MethodCallExpr(new NameExpr("CraneliftTarget"), "detectHost");
+        var suffixInit =
+                new MethodCallExpr(
+                        new NameExpr("CraneliftTarget"), "resourceSuffix", nodeList(detectHost));
+        var suffixDecl =
+                new VariableDeclarationExpr(
+                        new com.github.javaparser.ast.body.VariableDeclarator(
+                                parseType("String"), "suffix", suffixInit));
+
+        // String resource = "X." + suffix + ".native";
+        var resourceConcat =
+                new BinaryExpr(
+                        new BinaryExpr(
+                                new StringLiteralExpr(baseName + "."),
+                                new NameExpr("suffix"),
+                                BinaryExpr.Operator.PLUS),
+                        new StringLiteralExpr(".native"),
+                        BinaryExpr.Operator.PLUS);
+        var resourceDecl =
+                new VariableDeclarationExpr(
+                        new com.github.javaparser.ast.body.VariableDeclarator(
+                                parseType("String"), "resource", resourceConcat));
+
+        // try (InputStream in = X.class.getResourceAsStream(resource)) { ... }
+        var getResource =
+                new MethodCallExpr(
+                        new ClassExpr(parseType(baseName)),
+                        "getResourceAsStream",
+                        nodeList(new NameExpr("resource")));
+        var resourceVar =
+                new VariableDeclarationExpr(
+                        new com.github.javaparser.ast.body.VariableDeclarator(
+                                parseType("InputStream"), "in", getResource));
+
+        // if (in == null) throw new UnsupportedOperationException(...)
+        var nullCheck =
+                new BinaryExpr(
+                        new NameExpr("in"), new NullLiteralExpr(), BinaryExpr.Operator.EQUALS);
+        var unsupportedEx =
+                new ObjectCreationExpr()
+                        .setType(parseClassOrInterfaceType("UnsupportedOperationException"))
+                        .addArgument(
+                                new BinaryExpr(
+                                        new StringLiteralExpr(
+                                                "No precompiled native code for platform: "),
+                                        new NameExpr("suffix"),
+                                        BinaryExpr.Operator.PLUS));
+        var ifNull = new IfStmt(nullCheck, new ThrowStmt(unsupportedEx), null);
+
+        // CODE = NativeCodeSerializer.deserialize(in);
+        var assignStmt =
+                new ExpressionStmt(
+                        new AssignExpr(
+                                new NameExpr("CODE"),
+                                new MethodCallExpr(
+                                        new NameExpr("NativeCodeSerializer"),
+                                        "deserialize",
+                                        nodeList(new NameExpr("in"))),
+                                AssignExpr.Operator.ASSIGN));
+
+        var tryBlock = new BlockStmt(nodeList(ifNull, assignStmt));
+        var catchClause = ioCatchClause("Failed to load native code");
+
+        var tryStmt =
+                new TryStmt()
+                        .setResources(nodeList(resourceVar))
+                        .setTryBlock(tryBlock)
+                        .setCatchClauses(nodeList(catchClause));
+
+        var initBody = holderClass.addStaticInitializer();
+        initBody.addStatement(new ExpressionStmt(suffixDecl));
+        initBody.addStatement(new ExpressionStmt(resourceDecl));
+        initBody.addStatement(tryStmt);
+    }
+
+    private static void generateLoadMethod(ClassOrInterfaceDeclaration type) {
+        type.addMethod("load", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
+                .setType(WasmModule.class)
+                .createBody()
+                .addStatement(
+                        new ReturnStmt(
+                                new FieldAccessExpr(new NameExpr("WasmModuleHolder"), "INSTANCE")));
+    }
+
+    private static void generateBuilderMethod(ClassOrInterfaceDeclaration type) {
+        var factoryCall =
+                new MethodCallExpr(
+                        new NameExpr("NativeMachineFactory"),
+                        "builder",
+                        nodeList(
+                                new FieldAccessExpr(new NameExpr("WasmModuleHolder"), "INSTANCE"),
+                                new FieldAccessExpr(new NameExpr("NativeCodeHolder"), "CODE")));
+
+        type.addMethod("builder", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
+                .setType(parseClassOrInterfaceType("NativeMachineFactory.Builder"))
+                .createBody()
+                .addStatement(new ReturnStmt(factoryCall));
+    }
+
+    private static CatchClause ioCatchClause(String message) {
+        var newException =
+                new ObjectCreationExpr()
+                        .setType(parseClassOrInterfaceType("UncheckedIOException"))
+                        .addArgument(new StringLiteralExpr(message))
+                        .addArgument(new NameExpr("e"));
+        return new CatchClause()
+                .setParameter(new Parameter(parseClassOrInterfaceType("IOException"), "e"))
+                .setBody(new BlockStmt(nodeList(new ThrowStmt(newException))));
     }
 }
