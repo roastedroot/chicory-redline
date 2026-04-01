@@ -882,6 +882,9 @@ public final class NativeMachine implements Machine {
             initializeImportGlobals();
             initializeNativeTables();
 
+            // Reset stack limit so native code re-initializes from calling thread's RSP
+            ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.STACK_LIMIT, 0L);
+
             if (!memBaseInitialized) {
                 var mem = instance.memory();
                 if (mem instanceof NativeMemory nativeMemory) {
