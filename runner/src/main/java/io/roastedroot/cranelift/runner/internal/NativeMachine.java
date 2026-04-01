@@ -177,6 +177,8 @@ public final class NativeMachine implements Machine {
         ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.MEM_GROW_PTR, memGrowStub.address());
         ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.TABLE_PTRS, tablePtrsArray.address());
         ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.FUNC_TYPES_PTR, funcTypesArray.address());
+        ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.MEMMOVE_PTR, PanamaExecutor.MEMMOVE_ADDR);
+        ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.MEMSET_PTR, PanamaExecutor.MEMSET_ADDR);
 
         // Use pre-compiled code, or compile at runtime if explicitly enabled
         byte[][] compiledCode;
@@ -608,18 +610,6 @@ public final class NativeMachine implements Machine {
             case -5 -> { // elem drop
                 int elemIdx = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(0));
                 instance.setElement(elemIdx, null);
-            }
-            case -6 -> { // memory.copy
-                int dst = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(0));
-                int src = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(1));
-                int size = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(2));
-                instance.memory().copy(dst, src, size);
-            }
-            case -7 -> { // memory.fill
-                int dst = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(0));
-                int val = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(1));
-                int size = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(2));
-                instance.memory().fill((byte) val, dst, dst + size);
             }
             case -8 -> { // memory.init
                 int segmentId = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(0));

@@ -252,4 +252,22 @@ final class EmitContext {
         sigRefCache.put(key, sigRef);
         return sigRef;
     }
+
+    /** Signature for memmove/memset: (i64, i64, i64) -> i64. */
+    int getOrCreateMemopSigRef() {
+        String key = "__memop__";
+        Integer cached = sigRefCache.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        bridge.exports().beginSig();
+        bridge.exports().sigAddParam(CraneliftBridge.TYPE_I64); // dst ptr
+        bridge.exports().sigAddParam(CraneliftBridge.TYPE_I64); // src ptr / value
+        bridge.exports().sigAddParam(CraneliftBridge.TYPE_I64); // size
+        bridge.exports().sigAddReturn(CraneliftBridge.TYPE_I64);
+        int sigRef = bridge.exports().endSig();
+        sigRefCache.put(key, sigRef);
+        return sigRef;
+    }
 }

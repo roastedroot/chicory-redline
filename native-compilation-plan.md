@@ -77,12 +77,15 @@ toml2json (237KB, 279 functions):
   native:         44,111 ops/s  (6.5x)   <- all 279 funcs native
 ```
 
+## Completed
+
+### Native memory.copy/fill (optimization)
+
+memory.copy/fill now emit inline native code: OOB bounds checks + direct
+`memmove`/`memset` calls via function pointers stored in ctxBuffer.
+No trampoline needed — eliminates the native → upcall → Java → native round-trip.
+
 ## Next priorities
-
-### P2: Native memory.copy/fill (optimization)
-
-Current memory.copy/fill go through Java trampoline (native -> upcall -> Java).
-Emit as native `memmove`/`memset` with inline OOB checks — no trampoline needed.
 
 ### P2: Windows support
 

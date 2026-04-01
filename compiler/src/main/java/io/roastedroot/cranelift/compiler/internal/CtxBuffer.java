@@ -38,6 +38,9 @@ package io.roastedroot.cranelift.compiler.internal;
  *  32     i32    argCount          Number of call arguments
  *  36     i32    memGrowDelta      Page count delta for memory.grow
  *  40     i64    argsPtr           Pointer to separate args buffer
+ *  48     i64    stackLimit        Stack pointer limit for call depth guard
+ *  56     i64    memmovePtr        Pointer to libc memmove
+ *  64     i64    memsetPtr         Pointer to libc memset
  * 200     i64    globalsPtr        Pointer to globals buffer
  * 208     i64    memGrowPtr        Upcall stub for memory.grow
  * 216     i32    memoryPages       Current memory page count
@@ -103,6 +106,12 @@ public final class CtxBuffer {
 
     /** Stack pointer limit for call depth guard (i64). */
     public static final int STACK_LIMIT = 48;
+
+    /** Pointer to libc memmove function (i64). */
+    public static final int MEMMOVE_PTR = 56;
+
+    /** Pointer to libc memset function (i64). */
+    public static final int MEMSET_PTR = 64;
 
     // --- Memory and globals ---
 

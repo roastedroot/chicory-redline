@@ -24,12 +24,20 @@ final class PanamaExecutor {
         MAP_ANONYMOUS = os.contains("mac") || os.contains("darwin") ? 0x1000 : 0x20;
     }
 
+    /** Raw address of libc memmove, for use as a native function pointer. */
+    static final long MEMMOVE_ADDR;
+
+    /** Raw address of libc memset, for use as a native function pointer. */
+    static final long MEMSET_ADDR;
+
     private static final java.lang.invoke.MethodHandle MMAP;
     private static final java.lang.invoke.MethodHandle MPROTECT;
     private static final java.lang.invoke.MethodHandle MUNMAP;
 
     static {
         var lookup = LINKER.defaultLookup();
+        MEMMOVE_ADDR = lookup.find("memmove").orElseThrow().address();
+        MEMSET_ADDR = lookup.find("memset").orElseThrow().address();
         try {
             MMAP =
                     LINKER.downcallHandle(

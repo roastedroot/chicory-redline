@@ -1214,29 +1214,56 @@ final class NativeEmitters {
         b.emitCallIndirect(trampolineSig, trampolinePtr);
     }
 
-    // --- Bulk memory operations (via trampoline) ---
+    // --- Bulk memory operations (inline native memmove/memset) ---
+
+    /**
+     * Emit OOB check for bulk memory ops: if addr + size > memPages * 65536, trap.
+     * Both addr and size are i32 runtime values.
+     */
+    private static void emitBulkBoundsCheck(EmitContext ctx, int addr, int size) {
+        var b = ctx.bridge.exports();
+        int addr64 = b.emitUextendI64(addr);
+        int size64 = b.emitUextendI64(size);
+        int end = b.emitIadd(addr64, size64);
+
+        int zero = b.emitIconst32(0);
+        int memPages = b.emitLoadI32(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.MEMORY_PAGES);
+        int memPages64 = b.emitUextendI64(memPages);
+        int memSize = b.emitIshl(memPages64, b.emitIconst64(16, 0));
+
+        int oob = b.emitIcmp(5, end, memSize); // GT unsigned
+        int trapBlock = b.createBlock();
+        int okBlock = b.createBlock();
+        b.emitBrif(oob, trapBlock, okBlock);
+
+        fillTrapBlock(ctx, trapBlock, CtxBuffer.TRAP_OOB);
+        b.switchToBlock(okBlock);
+    }
 
     static void emitMemoryCopy(EmitContext ctx) {
         int size = ctx.valueStack.pop();
         int srcOffset = ctx.valueStack.pop();
         int dstOffset = ctx.valueStack.pop();
         var b = ctx.bridge.exports();
+
+        // OOB checks for both src and dst ranges
+        emitBulkBoundsCheck(ctx, srcOffset, size);
+        emitBulkBoundsCheck(ctx, dstOffset, size);
+
+        // Compute native addresses: memBase + offset
+        int memBase = b.useVar(ctx.memBaseVar);
+        int effectiveDst = b.emitIadd(memBase, b.emitUextendI64(dstOffset));
+        int effectiveSrc = b.emitIadd(memBase, b.emitUextendI64(srcOffset));
+        int size64 = b.emitUextendI64(size);
+
+        // Call memmove(dst, src, size) via function pointer in ctxBuffer
         int zero = b.emitIconst32(0);
-
-        int argsPtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.ARGS_PTR);
-        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(dstOffset), CtxBuffer.argOffset(0));
-        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(srcOffset), CtxBuffer.argOffset(1));
-        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(size), CtxBuffer.argOffset(2));
-
-        b.emitStoreI32(
-                b.useVar(ctx.ctxPtrVar),
-                zero,
-                b.emitIconst32(-6), // sentinel for memory.copy
-                CtxBuffer.ARG_COUNT);
-        int trampolinePtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.TRAMPOLINE_PTR);
-        int trampolineSig = ctx.getOrCreateTrampolineSigRef();
-        b.pushCallArg(b.useVar(ctx.ctxPtrVar));
-        b.emitCallIndirect(trampolineSig, trampolinePtr);
+        int memmovePtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.MEMMOVE_PTR);
+        int sigRef = ctx.getOrCreateMemopSigRef();
+        b.pushCallArg(effectiveDst);
+        b.pushCallArg(effectiveSrc);
+        b.pushCallArg(size64);
+        b.emitCallIndirect(sigRef, memmovePtr);
     }
 
     static void emitMemoryFill(EmitContext ctx) {
@@ -1244,22 +1271,24 @@ final class NativeEmitters {
         int value = ctx.valueStack.pop();
         int dstOffset = ctx.valueStack.pop();
         var b = ctx.bridge.exports();
+
+        // OOB check for dst range
+        emitBulkBoundsCheck(ctx, dstOffset, size);
+
+        // Compute native address: memBase + dstOffset
+        int memBase = b.useVar(ctx.memBaseVar);
+        int effectiveDst = b.emitIadd(memBase, b.emitUextendI64(dstOffset));
+        int value64 = b.emitUextendI64(value);
+        int size64 = b.emitUextendI64(size);
+
+        // Call memset(dst, value, size) via function pointer in ctxBuffer
         int zero = b.emitIconst32(0);
-
-        int argsPtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.ARGS_PTR);
-        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(dstOffset), CtxBuffer.argOffset(0));
-        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(value), CtxBuffer.argOffset(1));
-        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(size), CtxBuffer.argOffset(2));
-
-        b.emitStoreI32(
-                b.useVar(ctx.ctxPtrVar),
-                zero,
-                b.emitIconst32(-7), // sentinel for memory.fill
-                CtxBuffer.ARG_COUNT);
-        int trampolinePtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.TRAMPOLINE_PTR);
-        int trampolineSig = ctx.getOrCreateTrampolineSigRef();
-        b.pushCallArg(b.useVar(ctx.ctxPtrVar));
-        b.emitCallIndirect(trampolineSig, trampolinePtr);
+        int memsetPtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.MEMSET_PTR);
+        int sigRef = ctx.getOrCreateMemopSigRef();
+        b.pushCallArg(effectiveDst);
+        b.pushCallArg(value64);
+        b.pushCallArg(size64);
+        b.emitCallIndirect(sigRef, memsetPtr);
     }
 
     static void emitMemoryInit(EmitContext ctx, AnnotatedInstruction ins) {
