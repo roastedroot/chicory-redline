@@ -85,20 +85,15 @@ memory.copy/fill now emit inline native code: OOB bounds checks + direct
 `memmove`/`memset` calls via function pointers stored in ctxBuffer.
 No trampoline needed — eliminates the native → upcall → Java → native round-trip.
 
-## Next priorities
+### Windows support
 
-### P2: Windows support
-
-PanamaExecutor uses mmap/mprotect/munmap which don't exist on Windows.
-Need to implement equivalent using Windows API via Panama:
+PanamaExecutor now supports both POSIX and Windows:
 - `VirtualAlloc` (reserve + commit) instead of mmap
 - `VirtualProtect` instead of mprotect
 - `VirtualFree` instead of munmap
-
-Cranelift already supports `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`
-targets (compilation works), but the runner can't execute native code on Windows
-until PanamaExecutor is ported. The calling convention fix (`ISA.default_call_conv()`)
-already handles `WindowsFastcall` for Windows targets.
+- OS detected at class init, resolves kernel32.dll symbols via `SymbolLookup.libraryLookup`
+- `CraneliftTarget.ALL_TARGETS` now includes Windows x86_64 and aarch64
+- CI matrix includes `windows-latest`
 
 ### P3: Review public API
 

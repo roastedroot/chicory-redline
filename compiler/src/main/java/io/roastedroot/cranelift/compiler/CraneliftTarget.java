@@ -16,10 +16,16 @@ public final class CraneliftTarget {
     public static final String WINDOWS_X86_64 = "x86_64-pc-windows-msvc";
     public static final String WINDOWS_AARCH64 = "aarch64-pc-windows-msvc";
 
-    /** Default targets: Linux and macOS, x86_64 and aarch64. Windows not yet supported (no mmap). */
+    /** Default targets: all supported platforms, x86_64 and aarch64. */
     public static final List<String> ALL_TARGETS =
             Collections.unmodifiableList(
-                    Arrays.asList(LINUX_X86_64, LINUX_AARCH64, MACOS_X86_64, MACOS_AARCH64));
+                    Arrays.asList(
+                            LINUX_X86_64,
+                            LINUX_AARCH64,
+                            MACOS_X86_64,
+                            MACOS_AARCH64,
+                            WINDOWS_X86_64,
+                            WINDOWS_AARCH64));
 
     /**
      * Returns a short resource suffix for a target triple.
