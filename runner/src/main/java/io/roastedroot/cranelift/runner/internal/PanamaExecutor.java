@@ -136,7 +136,7 @@ final class PanamaExecutor {
                                     size,
                                     MEM_RESERVE | MEM_COMMIT,
                                     PAGE_READWRITE);
-            if (addr.equals(MemorySegment.NULL)) {
+            if (addr.address() == 0) {
                 throw new RuntimeException("VirtualAlloc failed");
             }
             return addr.reinterpret(size);
@@ -176,12 +176,15 @@ final class PanamaExecutor {
 
     /** Reserve address space with no access (PROT_NONE). */
     static MemorySegment mmapNoAccess(long size) throws Throwable {
+        if (size == 0) {
+            return MemorySegment.NULL;
+        }
         if (IS_WINDOWS) {
             MemorySegment addr =
                     (MemorySegment)
                             VIRTUAL_ALLOC.invokeExact(
                                     MemorySegment.NULL, size, MEM_RESERVE, PAGE_NOACCESS);
-            if (addr.equals(MemorySegment.NULL)) {
+            if (addr.address() == 0) {
                 throw new RuntimeException("VirtualAlloc (reserve) failed");
             }
             return addr.reinterpret(size);
@@ -205,7 +208,7 @@ final class PanamaExecutor {
             MemorySegment result =
                     (MemorySegment)
                             VIRTUAL_ALLOC.invokeExact(addr, size, MEM_COMMIT, PAGE_READWRITE);
-            if (result.equals(MemorySegment.NULL)) {
+            if (result.address() == 0) {
                 throw new RuntimeException("VirtualAlloc (commit) failed");
             }
             return;
