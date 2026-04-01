@@ -203,6 +203,9 @@ final class PanamaExecutor {
 
     /** Make a range readable and writable (commits reserved pages on Windows). */
     static void mprotectReadWrite(MemorySegment addr, long size) throws Throwable {
+        if (size == 0) {
+            return;
+        }
         if (IS_WINDOWS) {
             // Must use VirtualAlloc with MEM_COMMIT to commit reserved pages
             MemorySegment result =
