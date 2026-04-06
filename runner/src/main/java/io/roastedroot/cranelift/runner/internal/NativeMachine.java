@@ -929,18 +929,22 @@ public final class NativeMachine implements Machine {
 
             long result = (long) handle.invokeExact(cachedMemBase, ctxBuffer, args);
 
+            // Check for exceptions from upcall stubs first — a host function
+            // may throw (e.g. WasiExitException from proc_exit) and then the
+            // native code hits unreachable, setting both pendingException and
+            // a trap code.  The pending exception is the real cause.
+            if (pendingException != null) {
+                var ex = pendingException;
+                pendingException = null;
+                ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE, 0);
+                sneakyThrow(ex);
+            }
+
             // Check for traps (pre-checks write trap code to ctxBuffer)
             int trapCode = ctxBuffer.get(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE);
             if (trapCode != 0) {
                 ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE, 0);
                 throw trapException(trapCode);
-            }
-
-            // Check for exceptions from upcall stubs (cannot throw through native)
-            if (pendingException != null) {
-                var ex = pendingException;
-                pendingException = null;
-                sneakyThrow(ex);
             }
 
             if (funcType.returns().isEmpty()) {
