@@ -354,11 +354,14 @@ public class Generator {
     private static void generateBuilderMethod(ClassOrInterfaceDeclaration type) {
         var factoryCall =
                 new MethodCallExpr(
-                        new NameExpr("NativeMachineFactory"),
-                        "builder",
-                        nodeList(
-                                new FieldAccessExpr(new NameExpr("WasmModuleHolder"), "INSTANCE"),
-                                new FieldAccessExpr(new NameExpr("NativeCodeHolder"), "CODE")));
+                        new MethodCallExpr(
+                                new NameExpr("NativeMachineFactory"),
+                                "builder",
+                                nodeList(
+                                        new FieldAccessExpr(
+                                                new NameExpr("WasmModuleHolder"), "INSTANCE"))),
+                        "withPrecompiledCode",
+                        nodeList(new FieldAccessExpr(new NameExpr("NativeCodeHolder"), "CODE")));
 
         type.addMethod("builder", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
                 .setType(parseClassOrInterfaceType("NativeMachineFactory.Builder"))

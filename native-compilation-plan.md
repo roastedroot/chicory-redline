@@ -47,7 +47,8 @@ try (var ni = NativeMachineFactory.builder(module).build()) {
     ni.instance().export("func").apply();
 }
 
-try (var ni = NativeMachineFactory.builder(module, precompiledCode)
+try (var ni = NativeMachineFactory.builder(module)
+        .withPrecompiledCode(precompiledCode)
         .withImportValues(imports)
         .build()) {
     ni.instance().export("func").apply();
@@ -95,10 +96,14 @@ PanamaExecutor now supports both POSIX and Windows:
 - `CraneliftTarget.ALL_TARGETS` now includes Windows x86_64 and aarch64
 - CI matrix includes `windows-latest`
 
-### P3: Review public API
+### P3: Review public API (DONE)
 
-Review the full public API surface of `NativeMachineFactory.Builder` for
-clarity and consistency.
+Reviewed and cleaned up `NativeMachineFactory.Builder`:
+- Removed two-arg `builder(module, code)` static method
+- Added `withPrecompiledCode(byte[][])` to Builder for consistency with other `with*` methods
+- Updated generated code in `Generator` to use the new chained API
+- Verified all public API is intentional: `NativeInstance`, `NativeMachineFactory` (+ `Builder`),
+  `CraneliftTarget`, `NativeCodeSerializer` in public packages; internals in `internal` packages
 
 ## How to build and test
 

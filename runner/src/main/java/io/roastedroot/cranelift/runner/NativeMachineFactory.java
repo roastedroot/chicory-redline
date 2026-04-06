@@ -77,14 +77,6 @@ public final class NativeMachineFactory implements AutoCloseable {
         return new Builder(module);
     }
 
-    /**
-     * Returns a new {@link Builder} for the given module with precompiled
-     * native code (e.g. from the Maven plugin).
-     */
-    public static Builder builder(WasmModule module, byte[][] precompiledCode) {
-        return new Builder(module, precompiledCode);
-    }
-
     public TableInstance createTable(Table table, int initValue) {
         var nativeTable = new NativeTable(table, arena);
         nativeTables.add(nativeTable);
@@ -143,6 +135,7 @@ public final class NativeMachineFactory implements AutoCloseable {
      *
      * <pre>
      * try (var ni = NativeMachineFactory.builder(module)
+     *         .withPrecompiledCode(code)
      *         .withImportValues(imports)
      *         .build()) {
      *     ni.instance().export("func").apply();
@@ -152,8 +145,8 @@ public final class NativeMachineFactory implements AutoCloseable {
     public static final class Builder {
 
         private final WasmModule module;
-        private final byte[][] precompiledCode;
-        private final boolean runtimeCompilation;
+        private byte[][] precompiledCode;
+        private boolean runtimeCompilation = true;
         private ImportValues importValues;
         private MemoryLimits memoryLimits;
         private boolean start = true;
@@ -161,14 +154,12 @@ public final class NativeMachineFactory implements AutoCloseable {
 
         Builder(WasmModule module) {
             this.module = module;
-            this.precompiledCode = null;
-            this.runtimeCompilation = true;
         }
 
-        Builder(WasmModule module, byte[][] precompiledCode) {
-            this.module = module;
+        public Builder withPrecompiledCode(byte[][] precompiledCode) {
             this.precompiledCode = precompiledCode;
             this.runtimeCompilation = false;
+            return this;
         }
 
         public Builder withImportValues(ImportValues importValues) {
