@@ -14,6 +14,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.ref.Cleaner;
 import java.nio.ByteOrder;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Off-heap contiguous Memory backed by mmap/mprotect.
@@ -26,6 +28,12 @@ public final class NativeMemory implements Memory, AutoCloseable {
 
     private static final Cleaner CLEANER = Cleaner.create();
 
+    private static final class WaitState {
+        int waiterCount;
+        int pendingWakeups;
+    }
+
+    private final Map<Integer, WaitState> waitStates = new ConcurrentHashMap<>();
     private final MemoryLimits limits;
     private final MemorySegment reserved;
     private MemorySegment segment;
@@ -121,25 +129,90 @@ public final class NativeMemory implements Memory, AutoCloseable {
     @SuppressWarnings("removal")
     @Override
     public Object lock(int address) {
-        return new Object();
+        if (!shared()) {
+            return new Object();
+        }
+        return waitStates.computeIfAbsent(address, k -> new WaitState());
+    }
+
+    private int waitOn(int address, java.util.function.BooleanSupplier condition, long timeout) {
+        if (!shared()) {
+            throw new ChicoryException("Attempt to wait on a non-shared memory, not supported.");
+        }
+
+        long deadline = (timeout < 0) ? Long.MAX_VALUE : System.nanoTime() + timeout;
+        WaitState state = waitStates.computeIfAbsent(address, k -> new WaitState());
+
+        synchronized (state) {
+            if (!condition.getAsBoolean()) {
+                return 1; // not-equal
+            }
+
+            state.waiterCount++;
+            try {
+                while (state.pendingWakeups == 0) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0) {
+                        return 2; // timeout
+                    }
+                    long millis = Math.max(remaining / 1_000_000L, 0);
+                    int nanos = Math.max((int) (remaining % 1_000_000L), 0);
+                    try {
+                        state.wait(millis, nanos);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new ChicoryException("Thread interrupted");
+                    }
+                }
+                return 0; // woken
+            } finally {
+                if (state.pendingWakeups > 0) {
+                    state.pendingWakeups--;
+                }
+                state.waiterCount--;
+            }
+        }
     }
 
     @SuppressWarnings("removal")
     @Override
     public int waitOn(int address, int expected, long timeout) {
-        throw new ChicoryException("waitOn not supported on NativeMemory");
+        return waitOn(address, () -> readInt(address) == expected, timeout);
     }
 
     @SuppressWarnings("removal")
     @Override
     public int waitOn(int address, long expected, long timeout) {
-        throw new ChicoryException("waitOn not supported on NativeMemory");
+        return waitOn(address, () -> readLong(address) == expected, timeout);
     }
 
     @SuppressWarnings("removal")
     @Override
     public int notify(int address, int maxThreads) {
-        return 0;
+        if (!shared()) {
+            return 0;
+        }
+
+        WaitState state = waitStates.get(address);
+        if (state == null) {
+            return 0;
+        }
+
+        synchronized (state) {
+            int actualWaiters = state.waiterCount - state.pendingWakeups;
+            if (actualWaiters == 0) {
+                return 0;
+            }
+            int toWake;
+            if (maxThreads < 0) {
+                toWake = actualWaiters;
+            } else {
+                toWake = Math.min(actualWaiters, maxThreads);
+            }
+            state.pendingWakeups += toWake;
+            state.notifyAll();
+            return toWake;
+        }
     }
 
     @Override

@@ -1201,6 +1201,227 @@ public final class NativeCompiler {
                 NativeEmitters.emitElemDrop(ctx, ins);
                 break;
 
+            // --- Atomic loads ---
+            case I32_ATOMIC_LOAD:
+                NativeEmitters.emitAtomicLoad(ctx, ins, 0);
+                break;
+            case I64_ATOMIC_LOAD:
+                NativeEmitters.emitAtomicLoad(ctx, ins, 1);
+                break;
+            case I32_ATOMIC_LOAD8_U:
+                NativeEmitters.emitAtomicLoad(ctx, ins, 2);
+                break;
+            case I32_ATOMIC_LOAD16_U:
+                NativeEmitters.emitAtomicLoad(ctx, ins, 3);
+                break;
+            case I64_ATOMIC_LOAD8_U:
+                NativeEmitters.emitAtomicLoad(ctx, ins, 4);
+                break;
+            case I64_ATOMIC_LOAD16_U:
+                NativeEmitters.emitAtomicLoad(ctx, ins, 5);
+                break;
+            case I64_ATOMIC_LOAD32_U:
+                NativeEmitters.emitAtomicLoad(ctx, ins, 6);
+                break;
+
+            // --- Atomic stores ---
+            case I32_ATOMIC_STORE:
+                NativeEmitters.emitAtomicStore(ctx, ins, 0);
+                break;
+            case I64_ATOMIC_STORE:
+                NativeEmitters.emitAtomicStore(ctx, ins, 1);
+                break;
+            case I32_ATOMIC_STORE8:
+                NativeEmitters.emitAtomicStore(ctx, ins, 2);
+                break;
+            case I32_ATOMIC_STORE16:
+                NativeEmitters.emitAtomicStore(ctx, ins, 3);
+                break;
+            case I64_ATOMIC_STORE8:
+                NativeEmitters.emitAtomicStore(ctx, ins, 4);
+                break;
+            case I64_ATOMIC_STORE16:
+                NativeEmitters.emitAtomicStore(ctx, ins, 5);
+                break;
+            case I64_ATOMIC_STORE32:
+                NativeEmitters.emitAtomicStore(ctx, ins, 6);
+                break;
+
+            // --- Atomic RMW add ---
+            case I32_ATOMIC_RMW_ADD:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 0, 0);
+                break;
+            case I64_ATOMIC_RMW_ADD:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 1, 0);
+                break;
+            case I32_ATOMIC_RMW8_ADD_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 2, 0);
+                break;
+            case I32_ATOMIC_RMW16_ADD_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 3, 0);
+                break;
+            case I64_ATOMIC_RMW8_ADD_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 4, 0);
+                break;
+            case I64_ATOMIC_RMW16_ADD_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 5, 0);
+                break;
+            case I64_ATOMIC_RMW32_ADD_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 6, 0);
+                break;
+
+            // --- Atomic RMW sub ---
+            case I32_ATOMIC_RMW_SUB:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 0, 1);
+                break;
+            case I64_ATOMIC_RMW_SUB:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 1, 1);
+                break;
+            case I32_ATOMIC_RMW8_SUB_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 2, 1);
+                break;
+            case I32_ATOMIC_RMW16_SUB_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 3, 1);
+                break;
+            case I64_ATOMIC_RMW8_SUB_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 4, 1);
+                break;
+            case I64_ATOMIC_RMW16_SUB_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 5, 1);
+                break;
+            case I64_ATOMIC_RMW32_SUB_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 6, 1);
+                break;
+
+            // --- Atomic RMW and ---
+            case I32_ATOMIC_RMW_AND:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 0, 2);
+                break;
+            case I64_ATOMIC_RMW_AND:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 1, 2);
+                break;
+            case I32_ATOMIC_RMW8_AND_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 2, 2);
+                break;
+            case I32_ATOMIC_RMW16_AND_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 3, 2);
+                break;
+            case I64_ATOMIC_RMW8_AND_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 4, 2);
+                break;
+            case I64_ATOMIC_RMW16_AND_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 5, 2);
+                break;
+            case I64_ATOMIC_RMW32_AND_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 6, 2);
+                break;
+
+            // --- Atomic RMW or ---
+            case I32_ATOMIC_RMW_OR:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 0, 3);
+                break;
+            case I64_ATOMIC_RMW_OR:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 1, 3);
+                break;
+            case I32_ATOMIC_RMW8_OR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 2, 3);
+                break;
+            case I32_ATOMIC_RMW16_OR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 3, 3);
+                break;
+            case I64_ATOMIC_RMW8_OR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 4, 3);
+                break;
+            case I64_ATOMIC_RMW16_OR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 5, 3);
+                break;
+            case I64_ATOMIC_RMW32_OR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 6, 3);
+                break;
+
+            // --- Atomic RMW xor ---
+            case I32_ATOMIC_RMW_XOR:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 0, 4);
+                break;
+            case I64_ATOMIC_RMW_XOR:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 1, 4);
+                break;
+            case I32_ATOMIC_RMW8_XOR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 2, 4);
+                break;
+            case I32_ATOMIC_RMW16_XOR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 3, 4);
+                break;
+            case I64_ATOMIC_RMW8_XOR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 4, 4);
+                break;
+            case I64_ATOMIC_RMW16_XOR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 5, 4);
+                break;
+            case I64_ATOMIC_RMW32_XOR_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 6, 4);
+                break;
+
+            // --- Atomic RMW xchg ---
+            case I32_ATOMIC_RMW_XCHG:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 0, 5);
+                break;
+            case I64_ATOMIC_RMW_XCHG:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 1, 5);
+                break;
+            case I32_ATOMIC_RMW8_XCHG_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 2, 5);
+                break;
+            case I32_ATOMIC_RMW16_XCHG_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 3, 5);
+                break;
+            case I64_ATOMIC_RMW8_XCHG_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 4, 5);
+                break;
+            case I64_ATOMIC_RMW16_XCHG_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 5, 5);
+                break;
+            case I64_ATOMIC_RMW32_XCHG_U:
+                NativeEmitters.emitAtomicRmw(ctx, ins, 6, 5);
+                break;
+
+            // --- Atomic cmpxchg ---
+            case I32_ATOMIC_RMW_CMPXCHG:
+                NativeEmitters.emitAtomicCmpxchg(ctx, ins, 0);
+                break;
+            case I64_ATOMIC_RMW_CMPXCHG:
+                NativeEmitters.emitAtomicCmpxchg(ctx, ins, 1);
+                break;
+            case I32_ATOMIC_RMW8_CMPXCHG_U:
+                NativeEmitters.emitAtomicCmpxchg(ctx, ins, 2);
+                break;
+            case I32_ATOMIC_RMW16_CMPXCHG_U:
+                NativeEmitters.emitAtomicCmpxchg(ctx, ins, 3);
+                break;
+            case I64_ATOMIC_RMW8_CMPXCHG_U:
+                NativeEmitters.emitAtomicCmpxchg(ctx, ins, 4);
+                break;
+            case I64_ATOMIC_RMW16_CMPXCHG_U:
+                NativeEmitters.emitAtomicCmpxchg(ctx, ins, 5);
+                break;
+            case I64_ATOMIC_RMW32_CMPXCHG_U:
+                NativeEmitters.emitAtomicCmpxchg(ctx, ins, 6);
+                break;
+
+            // --- Atomic wait/notify/fence ---
+            case MEM_ATOMIC_WAIT32:
+                NativeEmitters.emitAtomicWait32(ctx, ins);
+                break;
+            case MEM_ATOMIC_WAIT64:
+                NativeEmitters.emitAtomicWait64(ctx, ins);
+                break;
+            case MEM_ATOMIC_NOTIFY:
+                NativeEmitters.emitAtomicNotify(ctx, ins);
+                break;
+            case ATOMIC_FENCE:
+                NativeEmitters.emitAtomicFence(ctx);
+                break;
+
             // --- Reference types ---
             case REF_NULL:
                 NativeEmitters.emitRefNull(ctx);

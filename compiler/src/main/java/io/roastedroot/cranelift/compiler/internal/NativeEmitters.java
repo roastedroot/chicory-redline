@@ -1337,6 +1337,311 @@ final class NativeEmitters {
         b.emitCallIndirect(trampolineSig, trampolinePtr);
     }
 
+    // --- Atomic operations ---
+
+    private static final int[] ATOMIC_LOAD_ACCESS_SIZE = {4, 8, 1, 2, 1, 2, 4};
+    private static final int[] ATOMIC_STORE_ACCESS_SIZE = {4, 8, 1, 2, 1, 2, 4};
+    private static final int[] ATOMIC_RMW_ACCESS_SIZE = {4, 8, 1, 2, 1, 2, 4};
+
+    private static void emitAlignmentCheck(EmitContext ctx, int addr, int offset, int alignment) {
+        if (alignment <= 1) {
+            return; // no alignment needed for byte ops
+        }
+        var b = ctx.bridge.exports();
+        // effective = (addr + offset) as i64
+        int addr64 = b.emitUextendI64(addr);
+        int effective =
+                b.emitIadd(
+                        addr64,
+                        b.emitIconst64(
+                                (int) (Integer.toUnsignedLong(offset) & 0xFFFFFFFFL),
+                                (int) (Integer.toUnsignedLong(offset) >>> 32)));
+        int mask = b.emitIconst64(alignment - 1, 0);
+        int rem = b.emitBand(effective, mask);
+        int zero64 = b.emitIconst64(0, 0);
+        int misaligned = b.emitIcmp(1, rem, zero64); // NE
+        int trapBlock = b.createBlock();
+        int okBlock = b.createBlock();
+        b.emitBrif(misaligned, trapBlock, okBlock);
+        fillTrapBlock(ctx, trapBlock, CtxBuffer.TRAP_UNALIGNED_ATOMIC);
+        b.switchToBlock(okBlock);
+    }
+
+    static void emitAtomicLoad(EmitContext ctx, AnnotatedInstruction ins, int loadType) {
+        int addr = ctx.valueStack.pop();
+        int offset = (int) ins.operands()[1];
+        int accessSize = ATOMIC_LOAD_ACCESS_SIZE[loadType];
+        emitAlignmentCheck(ctx, addr, offset, accessSize);
+        emitBoundsCheck(ctx, addr, offset, accessSize);
+        int memBase = ctx.bridge.exports().useVar(ctx.memBaseVar);
+        int result;
+        switch (loadType) {
+            case 0:
+                result = ctx.bridge.exports().emitAtomicLoadI32(memBase, addr, offset);
+                break;
+            case 1:
+                result = ctx.bridge.exports().emitAtomicLoadI64(memBase, addr, offset);
+                break;
+            case 2:
+                result = ctx.bridge.exports().emitAtomicLoad8UI32(memBase, addr, offset);
+                break;
+            case 3:
+                result = ctx.bridge.exports().emitAtomicLoad16UI32(memBase, addr, offset);
+                break;
+            case 4:
+                result = ctx.bridge.exports().emitAtomicLoad8UI64(memBase, addr, offset);
+                break;
+            case 5:
+                result = ctx.bridge.exports().emitAtomicLoad16UI64(memBase, addr, offset);
+                break;
+            case 6:
+                result = ctx.bridge.exports().emitAtomicLoad32UI64(memBase, addr, offset);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown atomic load type: " + loadType);
+        }
+        ctx.valueStack.push(result);
+    }
+
+    static void emitAtomicStore(EmitContext ctx, AnnotatedInstruction ins, int storeType) {
+        int value = ctx.valueStack.pop();
+        int addr = ctx.valueStack.pop();
+        int offset = (int) ins.operands()[1];
+        int accessSize = ATOMIC_STORE_ACCESS_SIZE[storeType];
+        emitAlignmentCheck(ctx, addr, offset, accessSize);
+        emitBoundsCheck(ctx, addr, offset, accessSize);
+        int memBase = ctx.bridge.exports().useVar(ctx.memBaseVar);
+        switch (storeType) {
+            case 0:
+                ctx.bridge.exports().emitAtomicStoreI32(memBase, addr, value, offset);
+                break;
+            case 1:
+                ctx.bridge.exports().emitAtomicStoreI64(memBase, addr, value, offset);
+                break;
+            case 2:
+                ctx.bridge.exports().emitAtomicStore8(memBase, addr, value, offset);
+                break;
+            case 3:
+                ctx.bridge.exports().emitAtomicStore16(memBase, addr, value, offset);
+                break;
+            case 4:
+                ctx.bridge.exports().emitAtomicStore8I64(memBase, addr, value, offset);
+                break;
+            case 5:
+                ctx.bridge.exports().emitAtomicStore16I64(memBase, addr, value, offset);
+                break;
+            case 6:
+                ctx.bridge.exports().emitAtomicStore32I64(memBase, addr, value, offset);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown atomic store type: " + storeType);
+        }
+    }
+
+    // rmwOp: 0=add, 1=sub, 2=and, 3=or, 4=xor, 5=xchg
+    static void emitAtomicRmw(EmitContext ctx, AnnotatedInstruction ins, int widthType, int rmwOp) {
+        int value = ctx.valueStack.pop();
+        int addr = ctx.valueStack.pop();
+        int offset = (int) ins.operands()[1];
+        int accessSize = ATOMIC_RMW_ACCESS_SIZE[widthType];
+        emitAlignmentCheck(ctx, addr, offset, accessSize);
+        emitBoundsCheck(ctx, addr, offset, accessSize);
+        int memBase = ctx.bridge.exports().useVar(ctx.memBaseVar);
+        int result;
+        switch (widthType) {
+            case 0:
+                result = ctx.bridge.exports().emitAtomicRmwI32(rmwOp, memBase, addr, value, offset);
+                break;
+            case 1:
+                result = ctx.bridge.exports().emitAtomicRmwI64(rmwOp, memBase, addr, value, offset);
+                break;
+            case 2:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicRmw8UI32(rmwOp, memBase, addr, value, offset);
+                break;
+            case 3:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicRmw16UI32(rmwOp, memBase, addr, value, offset);
+                break;
+            case 4:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicRmw8UI64(rmwOp, memBase, addr, value, offset);
+                break;
+            case 5:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicRmw16UI64(rmwOp, memBase, addr, value, offset);
+                break;
+            case 6:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicRmw32UI64(rmwOp, memBase, addr, value, offset);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown atomic RMW width: " + widthType);
+        }
+        ctx.valueStack.push(result);
+    }
+
+    static void emitAtomicCmpxchg(EmitContext ctx, AnnotatedInstruction ins, int widthType) {
+        int replacement = ctx.valueStack.pop();
+        int expected = ctx.valueStack.pop();
+        int addr = ctx.valueStack.pop();
+        int offset = (int) ins.operands()[1];
+        int accessSize = ATOMIC_RMW_ACCESS_SIZE[widthType];
+        emitAlignmentCheck(ctx, addr, offset, accessSize);
+        emitBoundsCheck(ctx, addr, offset, accessSize);
+        int memBase = ctx.bridge.exports().useVar(ctx.memBaseVar);
+        int result;
+        switch (widthType) {
+            case 0:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicCasI32(memBase, addr, expected, replacement, offset);
+                break;
+            case 1:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicCasI64(memBase, addr, expected, replacement, offset);
+                break;
+            case 2:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicCas8UI32(memBase, addr, expected, replacement, offset);
+                break;
+            case 3:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicCas16UI32(memBase, addr, expected, replacement, offset);
+                break;
+            case 4:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicCas8UI64(memBase, addr, expected, replacement, offset);
+                break;
+            case 5:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicCas16UI64(memBase, addr, expected, replacement, offset);
+                break;
+            case 6:
+                result =
+                        ctx.bridge
+                                .exports()
+                                .emitAtomicCas32UI64(memBase, addr, expected, replacement, offset);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown atomic CAS width: " + widthType);
+        }
+        ctx.valueStack.push(result);
+    }
+
+    static void emitAtomicWait32(EmitContext ctx, AnnotatedInstruction ins) {
+        int timeout = ctx.valueStack.pop(); // i64
+        int expected = ctx.valueStack.pop(); // i32
+        int addr = ctx.valueStack.pop(); // i32
+        int offset = (int) ins.operands()[1];
+        emitAlignmentCheck(ctx, addr, offset, 4);
+        emitBoundsCheck(ctx, addr, offset, 4);
+        var b = ctx.bridge.exports();
+        int zero = b.emitIconst32(0);
+
+        int argsPtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.ARGS_PTR);
+        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(addr), CtxBuffer.argOffset(0));
+        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(expected), CtxBuffer.argOffset(1));
+        b.emitStoreI64(
+                argsPtr,
+                zero,
+                b.emitIconst64(
+                        (int) (Integer.toUnsignedLong(offset) & 0xFFFFFFFFL),
+                        (int) (Integer.toUnsignedLong(offset) >>> 32)),
+                CtxBuffer.argOffset(2));
+        b.emitStoreI64(argsPtr, zero, timeout, CtxBuffer.argOffset(3));
+
+        b.emitStoreI32(b.useVar(ctx.ctxPtrVar), zero, b.emitIconst32(-10), CtxBuffer.ARG_COUNT);
+        int trampolinePtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.TRAMPOLINE_PTR);
+        int trampolineSig = ctx.getOrCreateTrampolineSigRef();
+        b.pushCallArg(b.useVar(ctx.ctxPtrVar));
+        int rawResult = b.emitCallIndirect(trampolineSig, trampolinePtr);
+        ctx.valueStack.push(b.emitIreduceI32(rawResult));
+    }
+
+    static void emitAtomicWait64(EmitContext ctx, AnnotatedInstruction ins) {
+        int timeout = ctx.valueStack.pop(); // i64
+        int expected = ctx.valueStack.pop(); // i64
+        int addr = ctx.valueStack.pop(); // i32
+        int offset = (int) ins.operands()[1];
+        emitAlignmentCheck(ctx, addr, offset, 8);
+        emitBoundsCheck(ctx, addr, offset, 8);
+        var b = ctx.bridge.exports();
+        int zero = b.emitIconst32(0);
+
+        int argsPtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.ARGS_PTR);
+        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(addr), CtxBuffer.argOffset(0));
+        b.emitStoreI64(argsPtr, zero, expected, CtxBuffer.argOffset(1));
+        b.emitStoreI64(
+                argsPtr,
+                zero,
+                b.emitIconst64(
+                        (int) (Integer.toUnsignedLong(offset) & 0xFFFFFFFFL),
+                        (int) (Integer.toUnsignedLong(offset) >>> 32)),
+                CtxBuffer.argOffset(2));
+        b.emitStoreI64(argsPtr, zero, timeout, CtxBuffer.argOffset(3));
+
+        b.emitStoreI32(b.useVar(ctx.ctxPtrVar), zero, b.emitIconst32(-11), CtxBuffer.ARG_COUNT);
+        int trampolinePtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.TRAMPOLINE_PTR);
+        int trampolineSig = ctx.getOrCreateTrampolineSigRef();
+        b.pushCallArg(b.useVar(ctx.ctxPtrVar));
+        int rawResult = b.emitCallIndirect(trampolineSig, trampolinePtr);
+        ctx.valueStack.push(b.emitIreduceI32(rawResult));
+    }
+
+    static void emitAtomicNotify(EmitContext ctx, AnnotatedInstruction ins) {
+        int count = ctx.valueStack.pop(); // i32
+        int addr = ctx.valueStack.pop(); // i32
+        int offset = (int) ins.operands()[1];
+        emitAlignmentCheck(ctx, addr, offset, 4);
+        emitBoundsCheck(ctx, addr, offset, 4);
+        var b = ctx.bridge.exports();
+        int zero = b.emitIconst32(0);
+
+        int argsPtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.ARGS_PTR);
+        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(addr), CtxBuffer.argOffset(0));
+        b.emitStoreI64(argsPtr, zero, b.emitUextendI64(count), CtxBuffer.argOffset(1));
+        b.emitStoreI64(
+                argsPtr,
+                zero,
+                b.emitIconst64(
+                        (int) (Integer.toUnsignedLong(offset) & 0xFFFFFFFFL),
+                        (int) (Integer.toUnsignedLong(offset) >>> 32)),
+                CtxBuffer.argOffset(2));
+
+        b.emitStoreI32(b.useVar(ctx.ctxPtrVar), zero, b.emitIconst32(-12), CtxBuffer.ARG_COUNT);
+        int trampolinePtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.TRAMPOLINE_PTR);
+        int trampolineSig = ctx.getOrCreateTrampolineSigRef();
+        b.pushCallArg(b.useVar(ctx.ctxPtrVar));
+        int rawResult = b.emitCallIndirect(trampolineSig, trampolinePtr);
+        ctx.valueStack.push(b.emitIreduceI32(rawResult));
+    }
+
+    static void emitAtomicFence(EmitContext ctx) {
+        ctx.bridge.exports().emitFence();
+    }
+
     // --- Reference type operations ---
 
     static void emitRefNull(EmitContext ctx) {

@@ -147,6 +147,7 @@ public final class CtxBuffer {
     public static final int TRAP_INDIRECT_CALL_TYPE_MISMATCH = 9;
     public static final int TRAP_UNINITIALIZED_ELEMENT = 10;
     public static final int TRAP_TRUNC_NAN = 11;
+    public static final int TRAP_UNALIGNED_ATOMIC = 12;
 
     // --- NativeTable buffer layout ---
     // Each table buffer: [size:i32 @ 0][max:i32 @ 4][entries... @ 8]

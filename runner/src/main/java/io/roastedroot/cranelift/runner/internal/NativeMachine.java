@@ -622,7 +622,27 @@ public final class NativeMachine implements Machine {
                 int segmentId = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(0));
                 instance.memory().drop(segmentId);
             }
-            default -> throw new ChicoryException("Unknown table operation: " + opCode);
+            case -10 -> { // memory.atomic.wait32
+                int addr = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(0));
+                int expected = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(1));
+                int offset = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(2));
+                long timeout = argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(3));
+                return instance.memory().atomicWait(addr + offset, expected, timeout);
+            }
+            case -11 -> { // memory.atomic.wait64
+                int addr = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(0));
+                long expected = argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(1));
+                int offset = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(2));
+                long timeout = argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(3));
+                return instance.memory().atomicWait(addr + offset, expected, timeout);
+            }
+            case -12 -> { // memory.atomic.notify
+                int addr = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(0));
+                int count = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(1));
+                int offset = (int) argsBuffer.get(ValueLayout.JAVA_LONG, CtxBuffer.argOffset(2));
+                return instance.memory().atomicNotify(addr + offset, count);
+            }
+            default -> throw new ChicoryException("Unknown trampoline operation: " + opCode);
         }
         return 0L;
     }
@@ -815,6 +835,7 @@ public final class NativeMachine implements Machine {
                     new ChicoryException("uninitialized element");
             case CtxBuffer.TRAP_INDIRECT_CALL_TYPE_MISMATCH ->
                     new ChicoryException("indirect call type mismatch");
+            case CtxBuffer.TRAP_UNALIGNED_ATOMIC -> new ChicoryException("unaligned atomic");
             default -> new ChicoryException("trap: unknown code " + trapCode);
         };
     }
@@ -889,6 +910,12 @@ public final class NativeMachine implements Machine {
                             ValueLayout.JAVA_LONG,
                             CtxBuffer.MEM_BASE_ADDR,
                             cachedMemBase.address());
+                } else if (mem != null) {
+                    throw new ChicoryException(
+                            "NativeMachine requires NativeMemory but got "
+                                    + mem.getClass().getName()
+                                    + ". Use NativeMachineFactory.createMemory() for all"
+                                    + " memories, including imports.");
                 } else {
                     cachedMemBase = MemorySegment.NULL;
                 }

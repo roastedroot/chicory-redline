@@ -64,7 +64,7 @@ public class UnsupportedOpcodeTest {
     }
 
     @Test
-    public void shouldFailAtCompileTimeForAtomicOpcode() {
+    public void shouldCompileAtomicLoad() {
         var wat =
                 "(module"
                         + "  (memory 1 1 shared)"
@@ -76,15 +76,13 @@ public class UnsupportedOpcodeTest {
         var module = Parser.parse(Wat2Wasm.parse(wat));
         var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
 
-        var ex = assertThrows(ChicoryException.class, compiler::compileAll);
-
-        assertTrue(
-                ex.getMessage().contains("I32_ATOMIC_LOAD"),
-                "Exception should mention the unsupported opcode, got: " + ex.getMessage());
+        var result = compiler.compileAll();
+        assertTrue(result.length == 1, "Should compile 1 function");
+        assertTrue(result[0] != null && result[0].length > 0, "Should produce non-empty code");
     }
 
     @Test
-    public void shouldFailEvenIfOnlyOneFunction() {
+    public void shouldCompileAtomicOpsAlongsideRegular() {
         var wat =
                 "(module"
                         + "  (memory 1 1 shared)"
@@ -99,10 +97,32 @@ public class UnsupportedOpcodeTest {
         var module = Parser.parse(Wat2Wasm.parse(wat));
         var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
 
-        var ex = assertThrows(ChicoryException.class, compiler::compileAll);
+        var result = compiler.compileAll();
+        assertTrue(result.length == 2, "Should compile 2 functions");
+        assertTrue(result[0] != null && result[0].length > 0, "Should produce non-empty code");
+        assertTrue(result[1] != null && result[1].length > 0, "Should produce non-empty code");
+    }
 
+    @Test
+    public void shouldFailAtCompileTimeForSimdOpcode() {
+        var wat =
+                "(module"
+                        + "  (memory 1)"
+                        + "  (func (export \"simd_load\") (param i32) (result v128)"
+                        + "    (v128.load (local.get 0))"
+                        + "  )"
+                        + ")";
+
+        var module = Parser.parse(Wat2Wasm.parse(wat));
+        var compiler = new NativeCompiler("x86_64-unknown-linux-gnu", module);
+
+        var ex =
+                assertThrows(
+                        ChicoryException.class,
+                        compiler::compileAll,
+                        "SIMD opcodes should fail at compile time");
         assertTrue(
-                ex.getMessage().contains("function 1"),
-                "Exception should mention the failing function index, got: " + ex.getMessage());
+                ex.getCause() instanceof UnsupportedOperationException,
+                "Root cause should be UnsupportedOperationException");
     }
 }
