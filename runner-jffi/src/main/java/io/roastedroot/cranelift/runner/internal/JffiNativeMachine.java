@@ -47,15 +47,35 @@ public final class JffiNativeMachine implements Machine {
     static final long MEMSET_ADDR;
 
     static {
+        long memmove = 0;
+        long memset = 0;
         Library defaultLib = Library.getCachedInstance(null, Library.LAZY | Library.GLOBAL);
-        if (defaultLib == null) {
-            throw new ExceptionInInitializerError("Failed to open default native library");
+        if (defaultLib != null) {
+            memmove = defaultLib.getSymbolAddress("memmove");
+            memset = defaultLib.getSymbolAddress("memset");
         }
-        MEMMOVE_ADDR = defaultLib.getSymbolAddress("memmove");
-        MEMSET_ADDR = defaultLib.getSymbolAddress("memset");
-        if (MEMMOVE_ADDR == 0 || MEMSET_ADDR == 0) {
+        if (memmove == 0 || memset == 0) {
+            // Windows: memmove/memset live in msvcrt or ucrtbase, not the default library
+            for (String lib : new String[] {"msvcrt", "ucrtbase"}) {
+                Library crt = Library.getCachedInstance(lib, Library.LAZY | Library.GLOBAL);
+                if (crt != null) {
+                    if (memmove == 0) {
+                        memmove = crt.getSymbolAddress("memmove");
+                    }
+                    if (memset == 0) {
+                        memset = crt.getSymbolAddress("memset");
+                    }
+                    if (memmove != 0 && memset != 0) {
+                        break;
+                    }
+                }
+            }
+        }
+        if (memmove == 0 || memset == 0) {
             throw new ExceptionInInitializerError("memmove/memset not found in native library");
         }
+        MEMMOVE_ADDR = memmove;
+        MEMSET_ADDR = memset;
     }
 
     private final Instance instance;
