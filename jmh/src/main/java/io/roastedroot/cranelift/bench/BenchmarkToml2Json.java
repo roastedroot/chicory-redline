@@ -2,6 +2,8 @@ package io.roastedroot.cranelift.bench;
 
 import com.dylibso.chicory.runtime.ExportFunction;
 import com.dylibso.chicory.runtime.Instance;
+import io.roastedroot.cranelift.runner.JffiNativeMachineFactory;
+import io.roastedroot.cranelift.runner.NativeMachineFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -50,7 +52,33 @@ public class BenchmarkToml2Json {
 
         @Setup(Level.Trial)
         public void setup() {
-            var ni = Toml2JsonModule.builder().build();
+            var ni =
+                    NativeMachineFactory.builder(Toml2JsonModule.load())
+                            .withPrecompiledCode(Toml2JsonModule.loadNativeCode())
+                            .build();
+            instance = ni.instance();
+            var allocate = instance.export("allocate");
+            toml2json = instance.export("toml2json");
+            inPtr = (int) allocate.apply(TOML_BYTES.length, 0)[0];
+            outPtr = (int) allocate.apply(4, 0)[0];
+            outLen = (int) allocate.apply(4, 0)[0];
+        }
+    }
+
+    @State(Scope.Thread)
+    public static class JffiNativeState {
+        Instance instance;
+        ExportFunction toml2json;
+        int inPtr;
+        int outPtr;
+        int outLen;
+
+        @Setup(Level.Trial)
+        public void setup() {
+            var ni =
+                    JffiNativeMachineFactory.builder(Toml2JsonModule.load())
+                            .withPrecompiledCode(Toml2JsonModule.loadNativeCode())
+                            .build();
             instance = ni.instance();
             var allocate = instance.export("allocate");
             toml2json = instance.export("toml2json");
@@ -91,6 +119,12 @@ public class BenchmarkToml2Json {
     @Benchmark
     @BenchmarkMode(Mode.Throughput)
     public void native_(NativeState s, Blackhole bh) {
+        bh.consume(convert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen));
+    }
+
+    @Benchmark
+    @BenchmarkMode(Mode.Throughput)
+    public void nativeJffi(JffiNativeState s, Blackhole bh) {
         bh.consume(convert(s.instance, s.toml2json, s.inPtr, s.outPtr, s.outLen));
     }
 

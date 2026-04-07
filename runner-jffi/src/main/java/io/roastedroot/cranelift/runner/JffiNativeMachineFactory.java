@@ -11,42 +11,38 @@ import com.dylibso.chicory.wasm.types.MemoryLimits;
 import com.dylibso.chicory.wasm.types.MutabilityType;
 import com.dylibso.chicory.wasm.types.Table;
 import com.dylibso.chicory.wasm.types.ValType;
+import com.kenai.jffi.MemoryIO;
 import io.roastedroot.cranelift.compiler.CraneliftInstance;
-import io.roastedroot.cranelift.runner.internal.NativeGlobalInstance;
-import io.roastedroot.cranelift.runner.internal.NativeMachine;
-import io.roastedroot.cranelift.runner.internal.NativeMemory;
-import io.roastedroot.cranelift.runner.internal.NativeTable;
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
+import io.roastedroot.cranelift.runner.internal.JffiNativeGlobalInstance;
+import io.roastedroot.cranelift.runner.internal.JffiNativeMachine;
+import io.roastedroot.cranelift.runner.internal.JffiNativeMemory;
+import io.roastedroot.cranelift.runner.internal.JffiNativeTable;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Public API for the Cranelift native compiler.
+ * Public API for the Cranelift native compiler (jffi backend, Java 11+).
  *
  * <p>Usage:
  * <pre>
- * try (var ni = NativeMachineFactory.builder(module).build()) {
+ * try (var ni = JffiNativeMachineFactory.builder(module).build()) {
  *     ni.instance().export("func").apply();
  * }
  * </pre>
- *
- * <p>The factory holds shared off-heap state (Arena, globals buffer) that is used
- * by both the table/global factories and the NativeMachine. This ensures tables
- * and globals are created directly in off-heap memory — no sync or reflection needed.
  */
-public final class NativeMachineFactory implements AutoCloseable {
+public final class JffiNativeMachineFactory implements AutoCloseable {
 
-    private final Arena arena = Arena.ofShared();
+    private static final MemoryIO MEM = MemoryIO.getInstance();
+
     private final WasmModule module;
     private final byte[][] precompiledCode;
     private final boolean runtimeCompilation;
-    private final List<NativeTable> nativeTables = new ArrayList<>();
-    private MemorySegment globalsBuffer;
+    private final List<JffiNativeTable> nativeTables = new ArrayList<>();
+    private long globalsBufferAddr;
     private int globalIndex;
-    private NativeMachine nativeMachine;
+    private JffiNativeMachine nativeMachine;
 
-    private NativeMachineFactory(
+    private JffiNativeMachineFactory(
             WasmModule module, byte[][] precompiledCode, boolean runtimeCompilation) {
         this.module = module;
         this.precompiledCode = precompiledCode;
@@ -65,34 +61,29 @@ public final class NativeMachineFactory implements AutoCloseable {
         int definedGlobalCount =
                 module.globalSection() != null ? module.globalSection().globalCount() : 0;
         int totalGlobals = importGlobalCount + definedGlobalCount;
-        this.globalsBuffer =
-                totalGlobals > 0 ? arena.allocate((long) totalGlobals * 8, 8) : MemorySegment.NULL;
+        this.globalsBufferAddr =
+                totalGlobals > 0 ? MEM.allocateMemory((long) totalGlobals * 8, true) : 0L;
         this.globalIndex = importGlobalCount; // module globals start after imports
     }
 
-    /**
-     * Returns a new {@link Builder} for the given module. The module will be
-     * compiled at runtime via Cranelift.
-     */
     public static Builder builder(WasmModule module) {
         return new Builder(module);
     }
 
     public TableInstance createTable(Table table, int initValue) {
-        var nativeTable = new NativeTable(table, arena);
+        var nativeTable = new JffiNativeTable(table);
         nativeTables.add(nativeTable);
         return nativeTable;
     }
 
     public GlobalInstance createGlobal(
             long value, long highValue, ValType type, MutabilityType mutability) {
-        var global =
-                new NativeGlobalInstance(globalsBuffer, globalIndex++, value, type, mutability);
-        return global;
+        return new JffiNativeGlobalInstance(
+                globalsBufferAddr, globalIndex++, value, type, mutability);
     }
 
     public static Memory createMemory(MemoryLimits limits) {
-        return new NativeMemory(limits);
+        return new JffiNativeMemory(limits);
     }
 
     public Machine compile(Instance instance) {
@@ -109,11 +100,10 @@ public final class NativeMachineFactory implements AutoCloseable {
         this.globalIndex = importGlobalCount;
         this.nativeTables.clear();
         this.nativeMachine =
-                new NativeMachine(
+                new JffiNativeMachine(
                         instance,
-                        arena,
                         nativeTables,
-                        globalsBuffer,
+                        globalsBufferAddr,
                         precompiledCode,
                         runtimeCompilation);
         return nativeMachine;
@@ -124,25 +114,12 @@ public final class NativeMachineFactory implements AutoCloseable {
         if (nativeMachine != null) {
             nativeMachine.close();
         }
-        try {
-            arena.close();
-        } catch (IllegalStateException e) {
-            // ignore — may already be closed by NativeMachine's CleanupAction
+        if (globalsBufferAddr != 0) {
+            MEM.freeMemory(globalsBufferAddr);
+            globalsBufferAddr = 0;
         }
     }
 
-    /**
-     * Fluent builder for creating a {@link NativeInstance}.
-     *
-     * <pre>
-     * try (var ni = NativeMachineFactory.builder(module)
-     *         .withPrecompiledCode(code)
-     *         .withImportValues(imports)
-     *         .build()) {
-     *     ni.instance().export("func").apply();
-     * }
-     * </pre>
-     */
     public static final class Builder implements CraneliftInstance.Builder {
 
         private final WasmModule module;
@@ -190,13 +167,13 @@ public final class NativeMachineFactory implements AutoCloseable {
 
         @Override
         public CraneliftInstance build() {
-            var factory = new NativeMachineFactory(module, precompiledCode, runtimeCompilation);
+            var factory = new JffiNativeMachineFactory(module, precompiledCode, runtimeCompilation);
             var instanceBuilder =
                     Instance.builder(module)
                             .withMachineFactory(factory::compile)
                             .withTableFactory(factory::createTable)
                             .withGlobalFactory(factory::createGlobal)
-                            .withMemoryFactory(NativeMachineFactory::createMemory)
+                            .withMemoryFactory(JffiNativeMachineFactory::createMemory)
                             .withStart(start)
                             .withInitialize(initialize);
             if (importValues != null) {

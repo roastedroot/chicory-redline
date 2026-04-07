@@ -41,7 +41,7 @@ jobs:
           gpg --list-secret-keys --keyid-format LONG
 
       - name: Compile
-        run: mvn --batch-mode clean install -DskipTests
+        run: mvn --batch-mode clean install -P panama,jffi -DskipTests
 
       - name: Setup Git
         run: |
@@ -50,7 +50,7 @@ jobs:
 
       - name: Set the version
         run: |
-          mvn versions:set -DgenerateBackupPoms=false -DnewVersion=${{ github.event.inputs.release-version }}
+          mvn versions:set -P panama,jffi -DgenerateBackupPoms=false -DnewVersion=${{ github.event.inputs.release-version }}
           git add .
           git commit -m "Release version update ${{ github.event.inputs.release-version }}"
           git push
@@ -61,7 +61,7 @@ jobs:
 
       - name: Release to Maven Central
         run: |
-          mvn --batch-mode deploy -Prelease -DskipTests=true
+          mvn --batch-mode deploy -Prelease,panama,jffi -DskipTests=true
         env:
           MAVEN_USERNAME: ${{ secrets.central_username }}
           MAVEN_CENTRAL_TOKEN: ${{ secrets.central_password }}
@@ -69,7 +69,7 @@ jobs:
 
       - name: Back to Snapshot
         run: |
-          mvn versions:set -DgenerateBackupPoms=false -DnewVersion=999-SNAPSHOT
+          mvn versions:set -P panama,jffi -DgenerateBackupPoms=false -DnewVersion=999-SNAPSHOT
           git add .
           git commit -m "Snapshot version update"
           git push

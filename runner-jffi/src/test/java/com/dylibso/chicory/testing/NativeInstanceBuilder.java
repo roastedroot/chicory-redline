@@ -4,10 +4,10 @@ import com.dylibso.chicory.runtime.ImportValues;
 import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.wasm.WasmModule;
 import io.roastedroot.cranelift.compiler.CraneliftInstance;
-import io.roastedroot.cranelift.runner.NativeMachineFactory;
+import io.roastedroot.cranelift.runner.JffiNativeMachineFactory;
 
 /**
- * Test-only adapter that wraps {@link NativeMachineFactory.Builder} and
+ * Test-only adapter that wraps {@link JffiNativeMachineFactory.Builder} and
  * returns a plain {@link Instance} — matching what the spec-test harness expects.
  */
 public final class NativeInstanceBuilder {
@@ -19,7 +19,7 @@ public final class NativeInstanceBuilder {
     }
 
     public static NativeInstanceBuilder builder(WasmModule module) {
-        return new NativeInstanceBuilder(NativeMachineFactory.builder(module));
+        return new NativeInstanceBuilder(JffiNativeMachineFactory.builder(module));
     }
 
     public NativeInstanceBuilder withImportValues(ImportValues importValues) {

@@ -34,9 +34,6 @@
     <module>build-time-compiler</module>
     <module>compiler</module>
     <module>compiler-maven-plugin</module>
-    <module>integration-tests</module>
-    <module>jmh</module>
-    <module>runner</module>
   </modules>
 
   <scm>
@@ -303,6 +300,23 @@
   </build>
 
   <profiles>
+    <profile>
+      <id>panama</id>
+      <activation>
+        <jdk>[25,)</jdk>
+      </activation>
+      <modules>
+        <module>integration-tests</module>
+        <module>jmh</module>
+        <module>runner</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>jffi</id>
+      <modules>
+        <module>runner-jffi</module>
+      </modules>
+    </profile>
     <profile>
       <id>release</id>
       <build>

@@ -1,0 +1,408 @@
+package io.roastedroot.cranelift.runner.internal;
+
+import static com.dylibso.chicory.runtime.ConstantEvaluators.computeConstantValue;
+
+import com.dylibso.chicory.runtime.Instance;
+import com.dylibso.chicory.runtime.Memory;
+import com.dylibso.chicory.wasm.ChicoryException;
+import com.dylibso.chicory.wasm.UninstantiableException;
+import com.dylibso.chicory.wasm.types.ActiveDataSegment;
+import com.dylibso.chicory.wasm.types.DataSegment;
+import com.dylibso.chicory.wasm.types.MemoryLimits;
+import com.dylibso.chicory.wasm.types.PassiveDataSegment;
+import com.kenai.jffi.MemoryIO;
+import com.kenai.jffi.PageManager;
+import java.lang.ref.Cleaner;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Off-heap contiguous Memory backed by mmap/mprotect via jffi PageManager.
+ *
+ * <p>Reserves the full maximum address range upfront with PROT_NONE (no physical
+ * memory committed), then mprotects pages as needed. Grow is zero-copy — just
+ * mprotect the next range. The base address never changes.
+ */
+public final class JffiNativeMemory implements Memory, AutoCloseable {
+
+    private static final Cleaner CLEANER = Cleaner.create();
+    private static final MemoryIO MEM = MemoryIO.getInstance();
+    private static final PageManager PM = PageManager.getInstance();
+
+    private static final class WaitState {
+        int waiterCount;
+        int pendingWakeups;
+    }
+
+    private final Map<Integer, WaitState> waitStates = new ConcurrentHashMap<>();
+    private final MemoryLimits limits;
+    private final long reservedAddress;
+    private final int reservedOsPages;
+    private final int osPerWasm; // OS pages per Wasm page
+    private int nPages;
+    private final Cleaner.Cleanable cleanable;
+    private DataSegment[] dataSegments;
+
+    private static final class CleanupAction implements Runnable {
+        private final long reservedAddress;
+        private final int reservedOsPages;
+
+        CleanupAction(long reservedAddress, int reservedOsPages) {
+            this.reservedAddress = reservedAddress;
+            this.reservedOsPages = reservedOsPages;
+        }
+
+        @Override
+        public void run() {
+            if (reservedOsPages > 0 && reservedAddress != 0) {
+                try {
+                    PM.freePages(reservedAddress, reservedOsPages);
+                } catch (Throwable e) {
+                    // ignore cleanup errors
+                }
+            }
+        }
+    }
+
+    public JffiNativeMemory(MemoryLimits limits) {
+        this.limits = limits;
+        this.nPages = limits.initialPages();
+        int maxPages = Math.min(limits.maximumPages(), RUNTIME_MAX_PAGES);
+        int osPageSize = (int) PM.pageSize();
+        this.osPerWasm = PAGE_SIZE / osPageSize;
+        this.reservedOsPages = maxPages * osPerWasm;
+
+        if (reservedOsPages > 0) {
+            // PROT_NONE = 0 (reserve address space without committing)
+            this.reservedAddress = PM.allocatePages(reservedOsPages, 0);
+            if (reservedAddress == 0 || reservedAddress == -1) {
+                throw new ChicoryException("Failed to reserve memory pages");
+            }
+
+            if (nPages > 0) {
+                PM.protectPages(
+                        reservedAddress,
+                        nPages * osPerWasm,
+                        PageManager.PROT_READ | PageManager.PROT_WRITE);
+            }
+        } else {
+            this.reservedAddress = 0;
+        }
+
+        this.cleanable =
+                CLEANER.register(this, new CleanupAction(reservedAddress, reservedOsPages));
+    }
+
+    @Override
+    public void close() {
+        cleanable.clean();
+    }
+
+    /** Get the native address of the memory buffer, for passing to native code. */
+    public long nativeAddress() {
+        return reservedAddress;
+    }
+
+    @Override
+    public int pages() {
+        return nPages;
+    }
+
+    @Override
+    public int grow(int size) {
+        var prevPages = nPages;
+        var numPages = prevPages + size;
+        if (numPages > maximumPages() || numPages < prevPages) {
+            return -1;
+        }
+
+        try {
+            PM.protectPages(
+                    reservedAddress,
+                    numPages * osPerWasm,
+                    PageManager.PROT_READ | PageManager.PROT_WRITE);
+            this.nPages = numPages;
+        } catch (Throwable t) {
+            return -1;
+        }
+
+        return prevPages;
+    }
+
+    @Override
+    public int initialPages() {
+        return limits.initialPages();
+    }
+
+    @Override
+    public int maximumPages() {
+        return Math.min(limits.maximumPages(), RUNTIME_MAX_PAGES);
+    }
+
+    @Override
+    public boolean shared() {
+        return limits.shared();
+    }
+
+    @SuppressWarnings("removal")
+    @Override
+    public Object lock(int address) {
+        if (!shared()) {
+            return new Object();
+        }
+        return waitStates.computeIfAbsent(address, k -> new WaitState());
+    }
+
+    private int waitOn(int address, java.util.function.BooleanSupplier condition, long timeout) {
+        if (!shared()) {
+            throw new ChicoryException("Attempt to wait on a non-shared memory, not supported.");
+        }
+
+        long deadline = (timeout < 0) ? Long.MAX_VALUE : System.nanoTime() + timeout;
+        WaitState state = waitStates.computeIfAbsent(address, k -> new WaitState());
+
+        synchronized (state) {
+            if (!condition.getAsBoolean()) {
+                return 1; // not-equal
+            }
+
+            state.waiterCount++;
+            try {
+                while (state.pendingWakeups == 0) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0) {
+                        return 2; // timeout
+                    }
+                    long millis = Math.max(remaining / 1_000_000L, 0);
+                    int nanos = Math.max((int) (remaining % 1_000_000L), 0);
+                    try {
+                        state.wait(millis, nanos);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new ChicoryException("Thread interrupted");
+                    }
+                }
+                return 0; // woken
+            } finally {
+                if (state.pendingWakeups > 0) {
+                    state.pendingWakeups--;
+                }
+                state.waiterCount--;
+            }
+        }
+    }
+
+    @SuppressWarnings("removal")
+    @Override
+    public int waitOn(int address, int expected, long timeout) {
+        return waitOn(address, () -> readInt(address) == expected, timeout);
+    }
+
+    @SuppressWarnings("removal")
+    @Override
+    public int waitOn(int address, long expected, long timeout) {
+        return waitOn(address, () -> readLong(address) == expected, timeout);
+    }
+
+    @SuppressWarnings("removal")
+    @Override
+    public int notify(int address, int maxThreads) {
+        if (!shared()) {
+            return 0;
+        }
+
+        WaitState state = waitStates.get(address);
+        if (state == null) {
+            return 0;
+        }
+
+        synchronized (state) {
+            int actualWaiters = state.waiterCount - state.pendingWakeups;
+            if (actualWaiters == 0) {
+                return 0;
+            }
+            int toWake;
+            if (maxThreads < 0) {
+                toWake = actualWaiters;
+            } else {
+                toWake = Math.min(actualWaiters, maxThreads);
+            }
+            state.pendingWakeups += toWake;
+            state.notifyAll();
+            return toWake;
+        }
+    }
+
+    @Override
+    public void initialize(Instance instance, DataSegment[] dataSegments) {
+        this.dataSegments = dataSegments;
+        if (dataSegments == null) {
+            return;
+        }
+        for (var s : dataSegments) {
+            if (s instanceof ActiveDataSegment) {
+                var seg = (ActiveDataSegment) s;
+                var data = seg.data();
+                var offset = (int) computeConstantValue(instance, seg.offsetInstructions())[0];
+                if (offset < 0 || offset + data.length > sizeInBytes()) {
+                    throw new UninstantiableException(
+                            "out of bounds memory access: offset="
+                                    + offset
+                                    + " size="
+                                    + data.length);
+                }
+                MEM.putByteArray(reservedAddress + offset, data, 0, data.length);
+            }
+        }
+    }
+
+    @Override
+    public void initPassiveSegment(int segmentId, int dest, int offset, int size) {
+        var seg = dataSegments[segmentId];
+        if (seg == null || seg == PassiveDataSegment.EMPTY) {
+            if (size > 0) {
+                throw new com.dylibso.chicory.runtime.WasmRuntimeException(
+                        "out of bounds memory access");
+            }
+            return;
+        }
+        write(dest, seg.data(), offset, size);
+    }
+
+    private int sizeInBytes() {
+        return PAGE_SIZE * nPages;
+    }
+
+    @Override
+    public void write(int addr, byte[] data, int offset, int size) {
+        long limit = sizeInBytes();
+        if (Integer.toUnsignedLong(offset) + Integer.toUnsignedLong(size) > data.length
+                || Integer.toUnsignedLong(addr) + Integer.toUnsignedLong(size) > limit) {
+            throw new com.dylibso.chicory.runtime.WasmRuntimeException(
+                    "out of bounds memory access");
+        }
+        MEM.putByteArray(reservedAddress + addr, data, offset, size);
+    }
+
+    @Override
+    public byte read(int addr) {
+        return MEM.getByte(reservedAddress + addr);
+    }
+
+    @Override
+    public byte[] readBytes(int addr, int len) {
+        byte[] result = new byte[len];
+        MEM.getByteArray(reservedAddress + addr, result, 0, len);
+        return result;
+    }
+
+    @Override
+    public void writeI32(int addr, int data) {
+        MEM.putInt(reservedAddress + addr, data);
+    }
+
+    @Override
+    public int readInt(int addr) {
+        return MEM.getInt(reservedAddress + addr);
+    }
+
+    @Override
+    public void writeLong(int addr, long data) {
+        MEM.putLong(reservedAddress + addr, data);
+    }
+
+    @Override
+    public long readLong(int addr) {
+        return MEM.getLong(reservedAddress + addr);
+    }
+
+    @Override
+    public void writeShort(int addr, short data) {
+        MEM.putShort(reservedAddress + addr, data);
+    }
+
+    @Override
+    public short readShort(int addr) {
+        return MEM.getShort(reservedAddress + addr);
+    }
+
+    @Override
+    public long readU16(int addr) {
+        return readShort(addr) & 0xFFFFL;
+    }
+
+    @Override
+    public void writeByte(int addr, byte data) {
+        MEM.putByte(reservedAddress + addr, data);
+    }
+
+    @Override
+    public void writeF32(int addr, float data) {
+        writeI32(addr, Float.floatToRawIntBits(data));
+    }
+
+    @Override
+    public long readF32(int addr) {
+        return readInt(addr);
+    }
+
+    @Override
+    public float readFloat(int addr) {
+        return Float.intBitsToFloat(readInt(addr));
+    }
+
+    @Override
+    public void writeF64(int addr, double data) {
+        writeLong(addr, Double.doubleToRawLongBits(data));
+    }
+
+    @Override
+    public double readDouble(int addr) {
+        return Double.longBitsToDouble(readLong(addr));
+    }
+
+    @Override
+    public long readF64(int addr) {
+        return readLong(addr);
+    }
+
+    @Override
+    public void zero() {
+        MEM.setMemory(reservedAddress, sizeInBytes(), (byte) 0);
+    }
+
+    @Override
+    public void copy(int dest, int src, int size) {
+        long limit = sizeInBytes();
+        if (Integer.toUnsignedLong(src) + Integer.toUnsignedLong(size) > limit
+                || Integer.toUnsignedLong(dest) + Integer.toUnsignedLong(size) > limit) {
+            throw new com.dylibso.chicory.runtime.WasmRuntimeException(
+                    "out of bounds memory access");
+        }
+        // Use a temp buffer to handle overlap correctly (memmove semantics)
+        if (size > 0) {
+            byte[] temp = new byte[size];
+            MEM.getByteArray(reservedAddress + src, temp, 0, size);
+            MEM.putByteArray(reservedAddress + dest, temp, 0, size);
+        }
+    }
+
+    @Override
+    public void fill(byte value, int fromIndex, int toIndex) {
+        long limit = sizeInBytes();
+        if (Integer.toUnsignedLong(fromIndex) > limit
+                || Integer.toUnsignedLong(toIndex) > limit
+                || fromIndex > toIndex) {
+            throw new com.dylibso.chicory.runtime.WasmRuntimeException(
+                    "out of bounds memory access");
+        }
+        MEM.setMemory(reservedAddress + fromIndex, toIndex - fromIndex, value);
+    }
+
+    @Override
+    public void drop(int segment) {
+        if (dataSegments != null) {
+            dataSegments[segment] = PassiveDataSegment.EMPTY;
+        }
+    }
+}

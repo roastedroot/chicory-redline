@@ -5,21 +5,21 @@ import io.roastedroot.cranelift.compiler.CraneliftInstance;
 
 /**
  * AutoCloseable wrapper around a Chicory {@link Instance} backed by native
- * (Cranelift-compiled) machine code.
+ * (Cranelift-compiled) machine code via jffi.
  *
  * <p>This is a convenience alias for {@link CraneliftInstance} specific to the
- * Panama backend. Prefer using {@link CraneliftInstance} directly for
+ * jffi backend. Prefer using {@link CraneliftInstance} directly for
  * backend-independent code.
  *
  * <p>Closing this instance releases all off-heap resources (mmap'd memory,
- * code regions, Panama arenas). Use try-with-resources or call {@link #close()}
+ * code regions, jffi closures). Use try-with-resources or call {@link #close()}
  * explicitly when done.
  */
-public final class NativeInstance implements AutoCloseable {
+public final class JffiNativeInstance implements AutoCloseable {
 
     private final CraneliftInstance delegate;
 
-    NativeInstance(CraneliftInstance delegate) {
+    JffiNativeInstance(CraneliftInstance delegate) {
         this.delegate = delegate;
     }
 

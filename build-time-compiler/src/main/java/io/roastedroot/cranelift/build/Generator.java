@@ -186,7 +186,7 @@ public class Generator {
         cu.addImport(WasmModule.class);
         cu.addImport(CraneliftTarget.class);
         cu.addImport(NativeCodeSerializer.class);
-        cu.addImport("io.roastedroot.cranelift.runner.NativeMachineFactory");
+        cu.addImport("io.roastedroot.cranelift.compiler.CraneliftInstance");
         cu.addImport(IOException.class);
         cu.addImport(InputStream.class);
         cu.addImport(UncheckedIOException.class);
@@ -197,6 +197,7 @@ public class Generator {
         generateWasmModuleHolderInnerClass(mainClass, baseName);
         generateNativeCodeHolderInnerClass(mainClass, baseName);
         generateLoadMethod(mainClass);
+        generateLoadNativeCodeMethod(mainClass);
         generateBuilderMethod(mainClass);
 
         return cu.toString();
@@ -351,11 +352,20 @@ public class Generator {
                                 new FieldAccessExpr(new NameExpr("WasmModuleHolder"), "INSTANCE")));
     }
 
+    private static void generateLoadNativeCodeMethod(ClassOrInterfaceDeclaration type) {
+        type.addMethod("loadNativeCode", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
+                .setType(parseType("byte[][]"))
+                .createBody()
+                .addStatement(
+                        new ReturnStmt(
+                                new FieldAccessExpr(new NameExpr("NativeCodeHolder"), "CODE")));
+    }
+
     private static void generateBuilderMethod(ClassOrInterfaceDeclaration type) {
         var factoryCall =
                 new MethodCallExpr(
                         new MethodCallExpr(
-                                new NameExpr("NativeMachineFactory"),
+                                new NameExpr("CraneliftInstance"),
                                 "builder",
                                 nodeList(
                                         new FieldAccessExpr(
@@ -364,7 +374,7 @@ public class Generator {
                         nodeList(new FieldAccessExpr(new NameExpr("NativeCodeHolder"), "CODE")));
 
         type.addMethod("builder", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
-                .setType(parseClassOrInterfaceType("NativeMachineFactory.Builder"))
+                .setType(parseClassOrInterfaceType("CraneliftInstance.Builder"))
                 .createBody()
                 .addStatement(new ReturnStmt(factoryCall));
     }

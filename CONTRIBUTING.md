@@ -15,7 +15,7 @@ NativeCompiler walks opcodes             cranelift_bridge.wasm exports:
 
   compile()                 ──────────>  compile() -> code bytes in linear memory
     read native bytes from bridge memory
-    mmap + Panama downcall
+    mmap + downcall (Panama or jffi)
 ```
 
 Two-pass compilation: NativeAnalyzer (reachability via exitBlockDepth) produces
@@ -30,39 +30,84 @@ Cranelift4J compiles the entire module -- no interpreter fallback at runtime.
 | Module | Java | Purpose |
 |---|---|---|
 | `bridge/` | 11 | `CraneliftBridge` wrapping `cranelift_bridge.wasm` via Chicory |
-| `compiler/` | 11 | `NativeCompiler`, `NativeEmitters`, `CtxBuffer` |
-| `runner/` | 25 | `NativeInstance`, `NativeMachineFactory`, `NativeMachine`, `PanamaExecutor`, `NativeMemory` |
+| `compiler/` | 11 | `NativeCompiler`, `NativeEmitters`, `CtxBuffer`, SPI interface (`CraneliftMachineFactoryProvider`) |
+| `runner/` | 25 | Panama FFM backend: `NativeMachineFactory`, `NativeMachine`, `PanamaExecutor`, `NativeMemory` |
+| `runner-jffi/` | 11 | jffi backend: `JffiNativeMachineFactory`, `JffiNativeMachine`, `JffiNativeMemory` |
 | `build-time-compiler/` | 11 | `Config` + `Generator` (JavaParser) for Maven plugin |
 | `compiler-maven-plugin/` | 11 | `CraneliftCompilerMojo` |
 | `integration-tests/` | - | Maven Invoker IT (toml2json) |
-| `jmh/` | 25 | JMH benchmarks (Chicory bytecode vs Cranelift native) |
+| `jmh/` | 25 | JMH benchmarks (Chicory bytecode vs Cranelift Panama vs Cranelift jffi) |
 | `wasm/` | - | Shared wasm files + toml2json Rust source |
+
+### Runner backends
+
+Two runner backends provide the same functionality via SPI (`CraneliftMachineFactoryProvider`):
+
+| Backend | Module | Java | Dependency | How it works |
+|---|---|---|---|---|
+| **Panama** | `runner/` | 25+ | none (uses `java.lang.foreign`) | `Linker.downcallHandle()`, `Arena`, `MemorySegment` |
+| **jffi** | `runner-jffi/` | 11+ | `jffi` (~200KB) | `Invoker.invokeN*()`, `MemoryIO`, `PageManager` |
+
+Users pick one dependency -- the SPI discovers it automatically:
+
+```xml
+<!-- Java 25+ (zero deps, Panama FFM) -->
+<dependency>
+    <groupId>io.roastedroot</groupId>
+    <artifactId>cranelift-runner</artifactId>
+</dependency>
+
+<!-- Java 11+ (jffi ~200KB) -->
+<dependency>
+    <groupId>io.roastedroot</groupId>
+    <artifactId>cranelift-runner-jffi</artifactId>
+</dependency>
+```
+
+### Maven profiles
+
+| Profile | Modules | Activation |
+|---|---|---|
+| `panama` | `runner`, `integration-tests`, `jmh` | Auto on JDK 25+ |
+| `jffi` | `runner-jffi` | Manual (`-P jffi`) |
+| `release` | GPG signing, javadoc, source jars, Maven Central deploy | Manual (`-P release`) |
+
+Base modules (bridge, compiler, build-time-compiler, compiler-maven-plugin) always build regardless of profiles.
 
 ### Key packages
 
 - `io.roastedroot.cranelift.bridge` -- CraneliftBridge
+- `io.roastedroot.cranelift.compiler` -- `CraneliftInstance`, `CraneliftMachineFactoryProvider` (SPI)
 - `io.roastedroot.cranelift.compiler.internal` -- NativeCompiler, NativeEmitters, CtxBuffer
-- `io.roastedroot.cranelift.runner` -- NativeInstance, NativeMachineFactory (public API)
+- `io.roastedroot.cranelift.runner` -- NativeMachineFactory, PanamaMachineFactoryProvider (public API)
 - `io.roastedroot.cranelift.runner.internal` -- NativeMachine, PanamaExecutor, NativeMemory
+- `io.roastedroot.cranelift.runner` (jffi) -- JffiNativeMachineFactory, JffiMachineFactoryProvider
+- `io.roastedroot.cranelift.runner.internal` (jffi) -- JffiNativeMachine, JffiNativeMemory
 
 ## Building
 
 ### Prerequisites
 
-- Java 25 (for runner module; compiler/bridge only need Java 11)
+- Java 25 (for full build with Panama runner; compiler/bridge/jffi only need Java 11)
 - Maven 3.9+
 
 ### Full build
 
 ```bash
-mvn clean install
+mvn clean install -P panama,jffi
 ```
 
-This runs checkstyle, spotless, compilation, and ~28k tests.
+This runs checkstyle, spotless, compilation, and ~28k tests on both runners.
 
 **Important**: Always use `mvn clean install` (not `-pl`) for the initial build.
 `-pl runner` does NOT rebuild the compiler module, so changes in compiler/
 require a full rebuild first.
+
+### Build only the jffi backend
+
+```bash
+mvn clean install -P jffi
+```
 
 ### Rebuild the Rust bridge (only when lib.rs changes)
 
@@ -84,18 +129,20 @@ mvn clean install -DskipTests && mvn install -pl compiler
 # Integration tests (toml2json)
 mvn clean install -DskipTests && mvn install -pl integration-tests
 
-# JMH benchmarks (bytecode vs native)
-mvn clean install -DskipTests && jmh/run.sh
+# JMH benchmarks (Panama vs jffi vs Chicory bytecode)
+mvn clean install -P panama,jffi -DskipTests && jmh/run.sh
 ```
 
 ## Code style
 
 - Checkstyle enforces: `NeedBraces`, no `IllegalCatch`, `PackageDeclaration` matching directory, `JavadocContentLocation`
 - Compiler uses `-Werror` so deprecation warnings are fatal
-- Java 11 modules (bridge, compiler, build-time-compiler, plugin): no switch expressions, no `instanceof` patterns, no `Stream.toList()` -- but `var` is fine (Java 10+)
+- Java 11 modules (bridge, compiler, build-time-compiler, plugin, runner-jffi): no switch expressions, no `instanceof` patterns, no `Stream.toList()` -- but `var` is fine (Java 10+)
 - Tests use `com.dylibso.chicory.tools.wasm.Wat2Wasm` (wasm-tools) instead of wabt
 
 ## Public API
+
+### SPI-based (backend-independent, recommended)
 
 Generated by Maven plugin (`cranelift-compiler-maven-plugin`):
 
@@ -105,16 +152,16 @@ try (var ni = MyModule.builder().build()) {
 }
 ```
 
-Direct API (`io.roastedroot.cranelift.runner.NativeMachineFactory`):
+Direct API (`io.roastedroot.cranelift.compiler.CraneliftInstance`):
 
 ```java
-// Runtime compilation
-try (var ni = NativeMachineFactory.builder(module).build()) {
+// Runtime compilation (auto-discovers backend via SPI)
+try (var ni = CraneliftInstance.builder(module).build()) {
     ni.instance().export("func").apply();
 }
 
 // With precompiled code
-try (var ni = NativeMachineFactory.builder(module)
+try (var ni = CraneliftInstance.builder(module)
         .withPrecompiledCode(precompiledCode)
         .withImportValues(imports)
         .build()) {
@@ -122,9 +169,18 @@ try (var ni = NativeMachineFactory.builder(module)
 }
 ```
 
-`NativeInstance` must always be closed (try-with-resources) because it holds
-off-heap native code and memory via Panama's `Arena`.
+### Backend-specific (when you need explicit control)
 
-## Missing Wasm proposals
+```java
+// Panama (Java 25+)
+try (var ni = NativeMachineFactory.builder(module).build()) {
+    ni.instance().export("func").apply();
+}
 
-- **Threads** (atomics): required for jq4j (24 functions use atomic opcodes)
+// jffi (Java 11+)
+try (var ni = JffiNativeMachineFactory.builder(module).build()) {
+    ni.instance().export("func").apply();
+}
+```
+
+Always close instances (try-with-resources) -- they hold off-heap native code and memory.
