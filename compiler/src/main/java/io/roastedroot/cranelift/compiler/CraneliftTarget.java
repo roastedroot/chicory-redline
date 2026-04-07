@@ -50,8 +50,12 @@ public final class CraneliftTarget {
      * Detects the Cranelift target triple for the current platform.
      */
     public static String detectHost() {
-        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+        String osName =
+                System.getProperty("cranelift4j.os.name", System.getProperty("os.name", ""))
+                        .toLowerCase(Locale.ROOT);
+        String arch =
+                System.getProperty("cranelift4j.os.arch", System.getProperty("os.arch", ""))
+                        .toLowerCase(Locale.ROOT);
 
         boolean isAarch64 = arch.equals("aarch64") || arch.equals("arm64");
 
@@ -62,7 +66,7 @@ public final class CraneliftTarget {
         } else if (osName.contains("windows")) {
             return isAarch64 ? WINDOWS_AARCH64 : WINDOWS_X86_64;
         }
-        // Default fallback
-        return LINUX_X86_64;
+        // Unknown platform — no native code available
+        return null;
     }
 }

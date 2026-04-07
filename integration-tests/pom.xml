@@ -31,6 +31,11 @@
       <artifactId>cranelift-runner</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>cranelift4j</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -43,6 +48,7 @@
             <dependency>io.roastedroot:cranelift-compiler-maven-plugin</dependency>
             <dependency>io.roastedroot:cranelift-runner</dependency>
             <dependency>io.roastedroot:cranelift-build-time-compiler</dependency>
+            <dependency>io.roastedroot:cranelift4j</dependency>
           </ignoredUnusedDeclaredDependencies>
         </configuration>
       </plugin>

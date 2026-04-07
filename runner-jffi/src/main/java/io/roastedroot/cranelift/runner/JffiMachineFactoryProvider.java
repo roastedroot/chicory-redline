@@ -20,4 +20,9 @@ public final class JffiMachineFactoryProvider implements CraneliftMachineFactory
     public Memory createMemory(MemoryLimits limits) {
         return JffiNativeMachineFactory.createMemory(limits);
     }
+
+    @Override
+    public int priority() {
+        return 50;
+    }
 }

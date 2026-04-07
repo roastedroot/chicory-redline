@@ -30,4 +30,12 @@ public interface CraneliftMachineFactoryProvider {
      * Create a native memory instance for the given limits.
      */
     Memory createMemory(MemoryLimits limits);
+
+    /**
+     * Priority used when multiple providers are on the classpath.
+     * Higher values are preferred. Panama = 100, jffi = 50.
+     */
+    default int priority() {
+        return 0;
+    }
 }

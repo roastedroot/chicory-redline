@@ -5,7 +5,6 @@ import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.runtime.Memory;
 import com.dylibso.chicory.wasm.WasmModule;
 import com.dylibso.chicory.wasm.types.MemoryLimits;
-import java.util.Iterator;
 import java.util.ServiceLoader;
 
 /**
@@ -29,15 +28,44 @@ public final class CraneliftInstance implements AutoCloseable {
 
     private final Instance instance;
     private final AutoCloseable factory;
+    private final boolean nativeBackend;
 
+    /**
+     * Internal: creates a native-backed CraneliftInstance.
+     * Users should use {@link #builder(WasmModule)} or the generated module's
+     * {@code builder()} method instead.
+     */
     public CraneliftInstance(Instance instance, AutoCloseable factory) {
         this.instance = instance;
         this.factory = factory;
+        this.nativeBackend = true;
+    }
+
+    private CraneliftInstance(Instance instance, AutoCloseable factory, boolean nativeBackend) {
+        this.instance = instance;
+        this.factory = factory;
+        this.nativeBackend = nativeBackend;
+    }
+
+    /**
+     * Wraps a Chicory bytecode-backed instance as a CraneliftInstance.
+     * Used by {@code UniversalInstance} when falling back to JVM bytecode.
+     */
+    public static CraneliftInstance forBytecode(Instance instance) {
+        return new CraneliftInstance(instance, () -> {}, false);
     }
 
     /** Return the underlying Chicory {@link Instance}. */
     public Instance instance() {
         return instance;
+    }
+
+    /**
+     * Returns {@code true} if this instance is backed by Cranelift native code,
+     * {@code false} if it fell back to Chicory JVM bytecode.
+     */
+    public boolean isNative() {
+        return nativeBackend;
     }
 
     @SuppressWarnings("IllegalCatch")
@@ -71,15 +99,20 @@ public final class CraneliftInstance implements AutoCloseable {
     }
 
     private static CraneliftMachineFactoryProvider loadProvider() {
-        Iterator<CraneliftMachineFactoryProvider> it =
-                ServiceLoader.load(CraneliftMachineFactoryProvider.class).iterator();
-        if (!it.hasNext()) {
+        CraneliftMachineFactoryProvider best = null;
+        for (CraneliftMachineFactoryProvider provider :
+                ServiceLoader.load(CraneliftMachineFactoryProvider.class)) {
+            if (best == null || provider.priority() > best.priority()) {
+                best = provider;
+            }
+        }
+        if (best == null) {
             throw new IllegalStateException(
                     "No CraneliftMachineFactoryProvider found on the classpath. "
                             + "Add either cranelift-runner (Java 25+) or "
                             + "cranelift-runner-jffi (Java 11+) as a dependency.");
         }
-        return it.next();
+        return best;
     }
 
     /**
@@ -87,16 +120,29 @@ public final class CraneliftInstance implements AutoCloseable {
      */
     public interface Builder {
 
+        /** Set the precompiled native code (one byte array per Wasm function). */
         Builder withPrecompiledCode(byte[][] precompiledCode);
 
+        /** Set host-provided imports (functions, globals, memories, tables). */
         Builder withImportValues(ImportValues importValues);
 
+        /** Override the default memory limits declared in the Wasm module. */
         Builder withMemoryLimits(MemoryLimits limits);
 
+        /**
+         * Whether to automatically call the Wasm {@code _start} export after
+         * instantiation. Defaults to {@code true}.
+         */
         Builder withStart(boolean start);
 
+        /**
+         * Whether to run Wasm module initialization (data/element segments,
+         * global initializers). Set to {@code false} to inspect the module
+         * before initialization. Defaults to {@code true}.
+         */
         Builder withInitialize(boolean init);
 
+        /** Build the instance, selecting the best available backend. */
         CraneliftInstance build();
     }
 }

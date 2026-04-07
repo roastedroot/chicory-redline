@@ -6,6 +6,11 @@ import static com.github.javaparser.StaticJavaParser.parseClassOrInterfaceType;
 import static com.github.javaparser.StaticJavaParser.parseType;
 import static com.github.javaparser.ast.NodeList.nodeList;
 
+import com.dylibso.chicory.codegen.CodegenUtils;
+import com.dylibso.chicory.codegen.ModuleInterfaceCodegen;
+import com.dylibso.chicory.compiler.InterpreterFallback;
+import com.dylibso.chicory.compiler.internal.ByteClassCollector;
+import com.dylibso.chicory.compiler.internal.Compiler;
 import com.dylibso.chicory.wasm.Parser;
 import com.dylibso.chicory.wasm.WasmModule;
 import com.dylibso.chicory.wasm.WasmWriter;
@@ -45,6 +50,7 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -163,9 +169,54 @@ public class Generator {
         Files.write(metaFile, writer.bytes());
     }
 
+    public void generateChicoryBytecode() throws IOException {
+        var module = Parser.parse(config.wasmFile());
+        var machineName = config.className() + "Machine";
+        var compiler =
+                Compiler.builder(module)
+                        .withClassName(machineName)
+                        .withClassCollectorFactory(ByteClassCollector::new)
+                        .withInterpreterFallback(InterpreterFallback.WARN)
+                        .build();
+        var result = compiler.compile();
+
+        var classFolder = config.targetClassFolder();
+        for (Map.Entry<String, byte[]> entry : result.classBytes().entrySet()) {
+            var binaryName = entry.getKey().replace('.', '/') + ".class";
+            var targetFile = classFolder.resolve(binaryName);
+            Files.createDirectories(targetFile.getParent());
+            Files.write(targetFile, entry.getValue());
+        }
+    }
+
+    public void generateModuleInterface() throws IOException {
+        var moduleInterfaceName = config.moduleInterface();
+        var module = Parser.parse(config.wasmFile());
+
+        var lastDot = moduleInterfaceName.lastIndexOf('.');
+        var packageName = (lastDot > 0) ? moduleInterfaceName.substring(0, lastDot) : "";
+        var typeName = moduleInterfaceName.substring(lastDot + 1);
+
+        var codegen =
+                ModuleInterfaceCodegen.builder(module)
+                        .withPackageName(packageName)
+                        .withTypeName(typeName)
+                        .withGeneratorName("io.roastedroot.cranelift.build.Generator")
+                        .build();
+        var classes = codegen.generate();
+
+        for (var entry : classes.entrySet()) {
+            var filePath =
+                    config.targetSourceFolder().resolve(entry.getKey().replace('.', '/') + ".java");
+            Files.createDirectories(filePath.getParent());
+            Files.writeString(
+                    filePath, entry.getValue().printer(CodegenUtils.printer()).toString());
+        }
+    }
+
     @SuppressWarnings("StringSplitter")
     public void generateSources() throws IOException {
-        var split = config.name().split("\\.");
+        var split = config.className().split("\\.");
         var sourceFolder = config.targetSourceFolder();
         for (int i = 0; i < split.length - 1; i++) {
             sourceFolder = sourceFolder.resolve(split[i]);
@@ -180,7 +231,7 @@ public class Generator {
         Files.writeString(sourceFile, source);
     }
 
-    private static String generateSourceCode(String packageName, String baseName) {
+    private String generateSourceCode(String packageName, String baseName) {
         var cu = new CompilationUnit(packageName);
         cu.addImport(Parser.class);
         cu.addImport(WasmModule.class);
@@ -195,10 +246,15 @@ public class Generator {
         mainClass.addConstructor(Modifier.Keyword.PRIVATE);
 
         generateWasmModuleHolderInnerClass(mainClass, baseName);
-        generateNativeCodeHolderInnerClass(mainClass, baseName);
+        generateNativeCodeHolderInnerClass(mainClass, baseName, config.bytecodeFallback());
         generateLoadMethod(mainClass);
         generateLoadNativeCodeMethod(mainClass);
-        generateBuilderMethod(mainClass);
+        if (config.bytecodeFallback()) {
+            generateCreateMethod(cu, mainClass, baseName);
+            generateUniversalBuilderMethod(cu, mainClass);
+        } else {
+            generateBuilderMethod(mainClass);
+        }
 
         return cu.toString();
     }
@@ -254,7 +310,7 @@ public class Generator {
     }
 
     private static void generateNativeCodeHolderInnerClass(
-            ClassOrInterfaceDeclaration type, String baseName) {
+            ClassOrInterfaceDeclaration type, String baseName, boolean graceful) {
         var holderClass =
                 new ClassOrInterfaceDeclaration(
                         nodeList(
@@ -267,11 +323,19 @@ public class Generator {
         holderClass.addField(
                 parseType("byte[][]"), "CODE", Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
 
-        // String suffix = CraneliftTarget.resourceSuffix(CraneliftTarget.detectHost());
+        // String host = CraneliftTarget.detectHost();
         var detectHost = new MethodCallExpr(new NameExpr("CraneliftTarget"), "detectHost");
+        var hostDecl =
+                new VariableDeclarationExpr(
+                        new com.github.javaparser.ast.body.VariableDeclarator(
+                                parseType("String"), "host", detectHost));
+
+        // String suffix = CraneliftTarget.resourceSuffix(host);
         var suffixInit =
                 new MethodCallExpr(
-                        new NameExpr("CraneliftTarget"), "resourceSuffix", nodeList(detectHost));
+                        new NameExpr("CraneliftTarget"),
+                        "resourceSuffix",
+                        nodeList(new NameExpr("host")));
         var suffixDecl =
                 new VariableDeclarationExpr(
                         new com.github.javaparser.ast.body.VariableDeclarator(
@@ -302,23 +366,13 @@ public class Generator {
                         new com.github.javaparser.ast.body.VariableDeclarator(
                                 parseType("InputStream"), "in", getResource));
 
-        // if (in == null) throw new UnsupportedOperationException(...)
+        // if (in == null) ...
         var nullCheck =
                 new BinaryExpr(
                         new NameExpr("in"), new NullLiteralExpr(), BinaryExpr.Operator.EQUALS);
-        var unsupportedEx =
-                new ObjectCreationExpr()
-                        .setType(parseClassOrInterfaceType("UnsupportedOperationException"))
-                        .addArgument(
-                                new BinaryExpr(
-                                        new StringLiteralExpr(
-                                                "No precompiled native code for platform: "),
-                                        new NameExpr("suffix"),
-                                        BinaryExpr.Operator.PLUS));
-        var ifNull = new IfStmt(nullCheck, new ThrowStmt(unsupportedEx), null);
 
         // CODE = NativeCodeSerializer.deserialize(in);
-        var assignStmt =
+        var deserializeAssign =
                 new ExpressionStmt(
                         new AssignExpr(
                                 new NameExpr("CODE"),
@@ -328,8 +382,50 @@ public class Generator {
                                         nodeList(new NameExpr("in"))),
                                 AssignExpr.Operator.ASSIGN));
 
-        var tryBlock = new BlockStmt(nodeList(ifNull, assignStmt));
-        var catchClause = ioCatchClause("Failed to load native code");
+        BlockStmt tryBlock;
+        if (graceful) {
+            // if (in == null) { CODE = null; } else { CODE = deserialize(in); }
+            var assignNull =
+                    new ExpressionStmt(
+                            new AssignExpr(
+                                    new NameExpr("CODE"),
+                                    new NullLiteralExpr(),
+                                    AssignExpr.Operator.ASSIGN));
+            var ifElse =
+                    new IfStmt(
+                            nullCheck,
+                            new BlockStmt(nodeList(assignNull)),
+                            new BlockStmt(nodeList(deserializeAssign)));
+            tryBlock = new BlockStmt(nodeList(ifElse));
+        } else {
+            // if (in == null) throw ...; CODE = deserialize(in);
+            var unsupportedEx =
+                    new ObjectCreationExpr()
+                            .setType(parseClassOrInterfaceType("UnsupportedOperationException"))
+                            .addArgument(
+                                    new BinaryExpr(
+                                            new StringLiteralExpr(
+                                                    "No precompiled native code for platform: "),
+                                            new NameExpr("suffix"),
+                                            BinaryExpr.Operator.PLUS));
+            var ifNull = new IfStmt(nullCheck, new ThrowStmt(unsupportedEx), null);
+            tryBlock = new BlockStmt(nodeList(ifNull, deserializeAssign));
+        }
+        // throw new UncheckedIOException("Failed to load native code for " + host, e)
+        var nativeErrorMsg =
+                new BinaryExpr(
+                        new StringLiteralExpr("Failed to load native code for platform: "),
+                        new NameExpr("host"),
+                        BinaryExpr.Operator.PLUS);
+        var nativeErrorExpr =
+                new ObjectCreationExpr()
+                        .setType(parseClassOrInterfaceType("UncheckedIOException"))
+                        .addArgument(nativeErrorMsg)
+                        .addArgument(new NameExpr("e"));
+        var catchClause =
+                new CatchClause()
+                        .setParameter(new Parameter(parseClassOrInterfaceType("IOException"), "e"))
+                        .setBody(new BlockStmt(nodeList(new ThrowStmt(nativeErrorExpr))));
 
         var tryStmt =
                 new TryStmt()
@@ -338,27 +434,123 @@ public class Generator {
                         .setCatchClauses(nodeList(catchClause));
 
         var initBody = holderClass.addStaticInitializer();
-        initBody.addStatement(new ExpressionStmt(suffixDecl));
-        initBody.addStatement(new ExpressionStmt(resourceDecl));
-        initBody.addStatement(tryStmt);
+        initBody.addStatement(new ExpressionStmt(hostDecl));
+        if (graceful) {
+            // if (host == null) { CODE = null; } else { ... load code ... }
+            var hostNullCheck =
+                    new BinaryExpr(
+                            new NameExpr("host"),
+                            new NullLiteralExpr(),
+                            BinaryExpr.Operator.EQUALS);
+            var hostNullAssign =
+                    new ExpressionStmt(
+                            new AssignExpr(
+                                    new NameExpr("CODE"),
+                                    new NullLiteralExpr(),
+                                    AssignExpr.Operator.ASSIGN));
+            var elseBlock = new BlockStmt();
+            elseBlock.addStatement(new ExpressionStmt(suffixDecl));
+            elseBlock.addStatement(new ExpressionStmt(resourceDecl));
+            elseBlock.addStatement(tryStmt);
+            initBody.addStatement(
+                    new IfStmt(hostNullCheck, new BlockStmt(nodeList(hostNullAssign)), elseBlock));
+        } else {
+            initBody.addStatement(new ExpressionStmt(suffixDecl));
+            initBody.addStatement(new ExpressionStmt(resourceDecl));
+            initBody.addStatement(tryStmt);
+        }
     }
 
     private static void generateLoadMethod(ClassOrInterfaceDeclaration type) {
-        type.addMethod("load", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
-                .setType(WasmModule.class)
-                .createBody()
+        var method =
+                type.addMethod("load", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
+                        .setType(WasmModule.class);
+        method.setJavadocComment(
+                "Returns the parsed Wasm module. For advanced use only;\n"
+                        + "prefer {@link #builder()} for automatic backend selection.");
+        method.createBody()
                 .addStatement(
                         new ReturnStmt(
                                 new FieldAccessExpr(new NameExpr("WasmModuleHolder"), "INSTANCE")));
     }
 
     private static void generateLoadNativeCodeMethod(ClassOrInterfaceDeclaration type) {
-        type.addMethod("loadNativeCode", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
-                .setType(parseType("byte[][]"))
-                .createBody()
+        var method =
+                type.addMethod("loadNativeCode", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
+                        .setType(parseType("byte[][]"));
+        method.setJavadocComment(
+                "Returns the precompiled native code for the current platform,\n"
+                        + "or {@code null} if no native code is available. For advanced use only;\n"
+                        + "prefer {@link #builder()} for automatic backend selection.");
+        method.createBody()
                 .addStatement(
                         new ReturnStmt(
                                 new FieldAccessExpr(new NameExpr("NativeCodeHolder"), "CODE")));
+    }
+
+    private static void generateCreateMethod(
+            CompilationUnit cu, ClassOrInterfaceDeclaration type, String baseName) {
+        cu.addImport("com.dylibso.chicory.runtime.Instance");
+        cu.addImport("com.dylibso.chicory.runtime.Machine");
+
+        // public static Machine create(Instance instance) {
+        //     return new {BaseName}Machine(instance);
+        // }
+        var machineName = baseName + "Machine";
+        var constructorCall =
+                new ObjectCreationExpr()
+                        .setType(parseClassOrInterfaceType(machineName))
+                        .addArgument(new NameExpr("instance"));
+
+        var method =
+                type.addMethod("create", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
+                        .setType(parseClassOrInterfaceType("Machine"))
+                        .addParameter(parseClassOrInterfaceType("Instance"), "instance");
+        method.setJavadocComment(
+                "Creates a Chicory JVM bytecode Machine for Chicory-compatible usage.\n"
+                        + "For advanced use only; prefer {@link #builder()} for automatic\n"
+                        + "backend selection.");
+        method.createBody().addStatement(new ReturnStmt(constructorCall));
+    }
+
+    private static void generateUniversalBuilderMethod(
+            CompilationUnit cu, ClassOrInterfaceDeclaration type) {
+        cu.addImport("io.roastedroot.cranelift4j.UniversalInstance");
+
+        // return UniversalInstance.builder(WasmModuleHolder.INSTANCE)
+        //     .withPrecompiledCode(NativeCodeHolder.CODE)
+        //     .withChicoryFallback(baseName::create);
+        var builderCall =
+                new MethodCallExpr(
+                        new MethodCallExpr(
+                                new MethodCallExpr(
+                                        new NameExpr("UniversalInstance"),
+                                        "builder",
+                                        nodeList(
+                                                new FieldAccessExpr(
+                                                        new NameExpr("WasmModuleHolder"),
+                                                        "INSTANCE"))),
+                                "withPrecompiledCode",
+                                nodeList(
+                                        new FieldAccessExpr(
+                                                new NameExpr("NativeCodeHolder"), "CODE"))),
+                        "withChicoryFallback",
+                        nodeList(
+                                new com.github.javaparser.ast.expr.MethodReferenceExpr()
+                                        .setScope(new NameExpr(type.getNameAsString()))
+                                        .setIdentifier("create")));
+
+        var method =
+                type.addMethod("builder", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
+                        .setType(parseClassOrInterfaceType("CraneliftInstance.Builder"));
+        method.setJavadocComment(
+                "Creates a builder that automatically selects the best available backend:\n"
+                        + "Cranelift native code when a runner is on the classpath, or\n"
+                        + "Chicory JVM bytecode otherwise. Use {@code .build()} to obtain\n"
+                        + "a {@link CraneliftInstance} and call\n"
+                        + "{@link CraneliftInstance#isNative()} to check which backend\n"
+                        + "was selected.");
+        method.createBody().addStatement(new ReturnStmt(builderCall));
     }
 
     private static void generateBuilderMethod(ClassOrInterfaceDeclaration type) {
@@ -373,10 +565,13 @@ public class Generator {
                         "withPrecompiledCode",
                         nodeList(new FieldAccessExpr(new NameExpr("NativeCodeHolder"), "CODE")));
 
-        type.addMethod("builder", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
-                .setType(parseClassOrInterfaceType("CraneliftInstance.Builder"))
-                .createBody()
-                .addStatement(new ReturnStmt(factoryCall));
+        var method =
+                type.addMethod("builder", Modifier.Keyword.PUBLIC, Modifier.Keyword.STATIC)
+                        .setType(parseClassOrInterfaceType("CraneliftInstance.Builder"));
+        method.setJavadocComment(
+                "Creates a builder backed by Cranelift native code.\n"
+                        + "Requires a native runner (Panama or jffi) on the classpath.");
+        method.createBody().addStatement(new ReturnStmt(factoryCall));
     }
 
     private static CatchClause ioCatchClause(String message) {

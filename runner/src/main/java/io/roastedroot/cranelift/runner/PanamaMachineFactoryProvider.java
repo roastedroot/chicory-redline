@@ -20,4 +20,9 @@ public final class PanamaMachineFactoryProvider implements CraneliftMachineFacto
     public Memory createMemory(MemoryLimits limits) {
         return NativeMachineFactory.createMemory(limits);
     }
+
+    @Override
+    public int priority() {
+        return 100;
+    }
 }

@@ -8,32 +8,25 @@
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift-build-time-compiler</artifactId>
+  <artifactId>cranelift4j</artifactId>
   <packaging>jar</packaging>
 
-  <name>Cranelift4J - Build Time Compiler</name>
-  <description>Build-time compilation of Wasm to native code via Cranelift</description>
+  <name>Cranelift4J - Universal Runtime</name>
+  <description>All-in-one runtime: Cranelift native (Panama/jffi) with Chicory bytecode fallback</description>
 
   <dependencies>
     <dependency>
       <groupId>com.dylibso.chicory</groupId>
-      <artifactId>codegen</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.dylibso.chicory</groupId>
-      <artifactId>compiler</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.dylibso.chicory</groupId>
-      <artifactId>wasm</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.github.javaparser</groupId>
-      <artifactId>javaparser-core</artifactId>
+      <artifactId>runtime</artifactId>
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
       <artifactId>cranelift-compiler</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>cranelift-runner-jffi</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>

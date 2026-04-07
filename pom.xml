@@ -314,6 +314,7 @@
     <profile>
       <id>jffi</id>
       <modules>
+        <module>cranelift4j</module>
         <module>runner-jffi</module>
       </modules>
     </profile>
