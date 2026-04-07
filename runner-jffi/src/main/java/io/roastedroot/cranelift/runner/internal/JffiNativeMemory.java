@@ -10,8 +10,13 @@ import com.dylibso.chicory.wasm.types.ActiveDataSegment;
 import com.dylibso.chicory.wasm.types.DataSegment;
 import com.dylibso.chicory.wasm.types.MemoryLimits;
 import com.dylibso.chicory.wasm.types.PassiveDataSegment;
+import com.kenai.jffi.CallContext;
+import com.kenai.jffi.CallingConvention;
+import com.kenai.jffi.Invoker;
+import com.kenai.jffi.Library;
 import com.kenai.jffi.MemoryIO;
 import com.kenai.jffi.PageManager;
+import com.kenai.jffi.Type;
 import java.lang.ref.Cleaner;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,6 +33,62 @@ public final class JffiNativeMemory implements Memory, AutoCloseable {
     private static final Cleaner CLEANER = Cleaner.create();
     private static final MemoryIO MEM = MemoryIO.getInstance();
     private static final PageManager PM = PageManager.getInstance();
+    private static final boolean IS_WINDOWS =
+            System.getProperty("os.name", "").toLowerCase().contains("win");
+
+    // Windows VirtualAlloc/VirtualFree via jffi Library+Invoker
+    // jffi's PageManager always uses MEM_COMMIT|MEM_RESERVE which fails for
+    // PROT_NONE reservations. We call VirtualAlloc directly with MEM_RESERVE only.
+    private static final long VIRTUAL_ALLOC_ADDR;
+    private static final long VIRTUAL_FREE_ADDR;
+    private static final CallContext VIRTUAL_ALLOC_CTX;
+    private static final CallContext VIRTUAL_FREE_CTX;
+    private static final Invoker INV = Invoker.getInstance();
+    private static final int MEM_COMMIT = 0x1000;
+    private static final int MEM_RESERVE = 0x2000;
+    private static final int MEM_RELEASE = 0x8000;
+    private static final int PAGE_NOACCESS = 0x01;
+    private static final int PAGE_READWRITE = 0x04;
+
+    static {
+        if (IS_WINDOWS) {
+            Library kernel32 = Library.getCachedInstance("kernel32", Library.LAZY | Library.GLOBAL);
+            if (kernel32 == null) {
+                throw new ExceptionInInitializerError("Failed to load kernel32");
+            }
+            VIRTUAL_ALLOC_ADDR = kernel32.getSymbolAddress("VirtualAlloc");
+            VIRTUAL_FREE_ADDR = kernel32.getSymbolAddress("VirtualFree");
+            if (VIRTUAL_ALLOC_ADDR == 0 || VIRTUAL_FREE_ADDR == 0) {
+                throw new ExceptionInInitializerError(
+                        "VirtualAlloc/VirtualFree not found in kernel32");
+            }
+            // VirtualAlloc(LPVOID addr, SIZE_T size, DWORD type, DWORD protect) -> LPVOID
+            VIRTUAL_ALLOC_CTX =
+                    new CallContext(
+                            Type.POINTER,
+                            new Type[] {Type.POINTER, Type.ULONG, Type.UINT32, Type.UINT32},
+                            CallingConvention.DEFAULT);
+            // VirtualFree(LPVOID addr, SIZE_T size, DWORD freeType) -> BOOL
+            VIRTUAL_FREE_CTX =
+                    new CallContext(
+                            Type.SINT32,
+                            new Type[] {Type.POINTER, Type.ULONG, Type.UINT32},
+                            CallingConvention.DEFAULT);
+        } else {
+            VIRTUAL_ALLOC_ADDR = 0;
+            VIRTUAL_FREE_ADDR = 0;
+            VIRTUAL_ALLOC_CTX = null;
+            VIRTUAL_FREE_CTX = null;
+        }
+    }
+
+    private static long winVirtualAlloc(long addr, long size, int type, int protect) {
+        return INV.invokeN4(VIRTUAL_ALLOC_CTX, VIRTUAL_ALLOC_ADDR, addr, size, type, protect);
+    }
+
+    private static int winVirtualFree(long addr, long size, int freeType) {
+        return (int) INV.invokeN3(VIRTUAL_FREE_CTX, VIRTUAL_FREE_ADDR, addr, size, freeType);
+    }
 
     private static final class WaitState {
         int waiterCount;
@@ -56,7 +117,12 @@ public final class JffiNativeMemory implements Memory, AutoCloseable {
         public void run() {
             if (reservedOsPages > 0 && reservedAddress != 0) {
                 try {
-                    PM.freePages(reservedAddress, reservedOsPages);
+                    if (IS_WINDOWS) {
+                        // VirtualFree with MEM_RELEASE requires size=0
+                        winVirtualFree(reservedAddress, 0, MEM_RELEASE);
+                    } else {
+                        PM.freePages(reservedAddress, reservedOsPages);
+                    }
                 } catch (Throwable e) {
                     // ignore cleanup errors
                 }
@@ -73,17 +139,34 @@ public final class JffiNativeMemory implements Memory, AutoCloseable {
         this.reservedOsPages = maxPages * osPerWasm;
 
         if (reservedOsPages > 0) {
-            // PROT_NONE = 0 (reserve address space without committing)
-            this.reservedAddress = PM.allocatePages(reservedOsPages, 0);
-            if (reservedAddress == 0 || reservedAddress == -1) {
-                throw new ChicoryException("Failed to reserve memory pages");
-            }
-
-            if (nPages > 0) {
-                PM.protectPages(
-                        reservedAddress,
-                        nPages * osPerWasm,
-                        PageManager.PROT_READ | PageManager.PROT_WRITE);
+            if (IS_WINDOWS) {
+                long reservedSize = (long) reservedOsPages * osPageSize;
+                this.reservedAddress = winVirtualAlloc(0, reservedSize, MEM_RESERVE, PAGE_NOACCESS);
+                if (reservedAddress == 0) {
+                    throw new ChicoryException("Failed to reserve memory pages");
+                }
+                if (nPages > 0) {
+                    long commitSize = (long) nPages * osPerWasm * osPageSize;
+                    long committed =
+                            winVirtualAlloc(
+                                    reservedAddress, commitSize, MEM_COMMIT, PAGE_READWRITE);
+                    if (committed == 0) {
+                        winVirtualFree(reservedAddress, 0, MEM_RELEASE);
+                        throw new ChicoryException("Failed to commit initial memory pages");
+                    }
+                }
+            } else {
+                // PROT_NONE = 0 (reserve address space without committing)
+                this.reservedAddress = PM.allocatePages(reservedOsPages, 0);
+                if (reservedAddress == 0 || reservedAddress == -1) {
+                    throw new ChicoryException("Failed to reserve memory pages");
+                }
+                if (nPages > 0) {
+                    PM.protectPages(
+                            reservedAddress,
+                            nPages * osPerWasm,
+                            PageManager.PROT_READ | PageManager.PROT_WRITE);
+                }
             }
         } else {
             this.reservedAddress = 0;
@@ -117,10 +200,20 @@ public final class JffiNativeMemory implements Memory, AutoCloseable {
         }
 
         try {
-            PM.protectPages(
-                    reservedAddress,
-                    numPages * osPerWasm,
-                    PageManager.PROT_READ | PageManager.PROT_WRITE);
+            if (IS_WINDOWS) {
+                int osPageSize = (int) PM.pageSize();
+                long commitSize = (long) numPages * osPerWasm * osPageSize;
+                long committed =
+                        winVirtualAlloc(reservedAddress, commitSize, MEM_COMMIT, PAGE_READWRITE);
+                if (committed == 0) {
+                    return -1;
+                }
+            } else {
+                PM.protectPages(
+                        reservedAddress,
+                        numPages * osPerWasm,
+                        PageManager.PROT_READ | PageManager.PROT_WRITE);
+            }
             this.nPages = numPages;
         } catch (Throwable t) {
             return -1;
