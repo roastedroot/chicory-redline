@@ -203,10 +203,13 @@ public final class JffiNativeMemory implements Memory, AutoCloseable {
             if (IS_WINDOWS) {
                 int osPageSize = (int) PM.pageSize();
                 long commitSize = (long) numPages * osPerWasm * osPageSize;
-                long committed =
-                        winVirtualAlloc(reservedAddress, commitSize, MEM_COMMIT, PAGE_READWRITE);
-                if (committed == 0) {
-                    return -1;
+                if (commitSize > 0) {
+                    long committed =
+                            winVirtualAlloc(
+                                    reservedAddress, commitSize, MEM_COMMIT, PAGE_READWRITE);
+                    if (committed == 0) {
+                        return -1;
+                    }
                 }
             } else {
                 PM.protectPages(
