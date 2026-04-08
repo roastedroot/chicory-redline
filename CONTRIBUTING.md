@@ -68,11 +68,14 @@ Users pick one dependency -- the SPI discovers it automatically:
 
 | Profile | Modules | Activation |
 |---|---|---|
-| `panama` | `runner`, `integration-tests`, `jmh` | Auto on JDK 25+ |
-| `jffi` | `runner-jffi` | Manual (`-P jffi`) |
+| `panama` | `runner` | Auto on JDK 25+ |
+| `jffi` | `redline`, `runner-jffi` | Manual (`-P jffi`) |
+| `ci` | `runner-tests`, `runner-jffi-tests`, `integration-tests`, `jmh` | Manual (`-P ci`) |
 | `release` | GPG signing, javadoc, source jars, Maven Central deploy | Manual (`-P release`) |
 
-Base modules (bridge, compiler, build-time-compiler, compiler-maven-plugin) always build regardless of profiles.
+Base modules (api, bridge, compiler, build-time-compiler, compiler-maven-plugin) always build regardless of profiles.
+
+Test modules (`runner-tests`, `runner-jffi-tests`) live in the `ci` profile to keep them out of the release reactor. Activate `-P ci` to run the spec tests locally.
 
 ### Key packages
 
@@ -94,10 +97,10 @@ Base modules (bridge, compiler, build-time-compiler, compiler-maven-plugin) alwa
 ### Full build
 
 ```bash
-mvn clean install -P panama,jffi
+mvn clean install -P panama,jffi,ci
 ```
 
-This runs checkstyle, spotless, compilation, and ~28k tests on both runners.
+This runs checkstyle, spotless, compilation, and ~28k spec tests on both runners.
 
 **Important**: Always use `mvn clean install` (not `-pl`) for the initial build.
 `-pl runner` does NOT rebuild the compiler module, so changes in compiler/
@@ -106,7 +109,7 @@ require a full rebuild first.
 ### Build only the jffi backend
 
 ```bash
-mvn clean install -P jffi
+mvn clean install -P jffi,ci
 ```
 
 ### Rebuild the Rust bridge (only when lib.rs changes)
@@ -120,8 +123,8 @@ cd ..
 ### Running specific tests
 
 ```bash
-# Spec tests and unit tests (runner module)
-mvn clean install -DskipTests && mvn install -pl runner -Dtest=AddTest
+# Spec tests and unit tests (runner-tests module)
+mvn clean install -DskipTests && mvn install -pl runner-tests -Dtest=AddTest
 
 # Compiler-only tests (UnsupportedOpcodeTest)
 mvn clean install -DskipTests && mvn install -pl compiler
@@ -130,7 +133,7 @@ mvn clean install -DskipTests && mvn install -pl compiler
 mvn clean install -DskipTests && mvn install -pl integration-tests
 
 # JMH benchmarks (Panama vs jffi vs Chicory bytecode)
-mvn clean install -P panama,jffi -DskipTests && jmh/run.sh
+mvn clean install -P panama,jffi,ci -DskipTests && jmh/run.sh
 ```
 
 ## Code style

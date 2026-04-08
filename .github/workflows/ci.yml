@@ -52,7 +52,7 @@ jobs:
       run: mvn -B -Dquickly
 
     - name: Test chicory-redline
-      run: mvn -B install -P panama,jffi
+      run: mvn -B install -P panama,jffi,ci
 
     - name: Publish Test Report
       uses: mikepenz/action-junit-report@v6
@@ -96,7 +96,7 @@ jobs:
       run: mvn -B -Dquickly
 
     - name: Compile (Java 25)
-      run: mvn -B install -P jffi -DskipTests
+      run: mvn -B install -P jffi,ci -DskipTests
 
     - name: Set up Java 11
       uses: actions/setup-java@v5
@@ -106,7 +106,7 @@ jobs:
         cache: maven
 
     - name: Run tests (Java 11)
-      run: mvn -B surefire:test -P jffi
+      run: mvn -B surefire:test -P jffi,ci
 
     - name: Publish Test Report
       uses: mikepenz/action-junit-report@v6

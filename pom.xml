@@ -309,7 +309,6 @@
       </activation>
       <modules>
         <module>runner</module>
-        <module>runner-tests</module>
       </modules>
     </profile>
     <profile>
@@ -317,7 +316,6 @@
       <modules>
         <module>redline</module>
         <module>runner-jffi</module>
-        <module>runner-jffi-tests</module>
       </modules>
     </profile>
     <profile>
@@ -325,6 +323,8 @@
       <modules>
         <module>integration-tests</module>
         <module>jmh</module>
+        <module>runner-jffi-tests</module>
+        <module>runner-tests</module>
       </modules>
     </profile>
     <profile>

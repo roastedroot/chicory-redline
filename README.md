@@ -114,7 +114,7 @@ try (var instance = MyModule.builder().build()) {
 Prerequisites: Java 25 and Maven 3.9+ for a full build (Java 11 is enough for the compiler and jffi backend only).
 
 ```bash
-mvn clean install
+mvn clean install -P panama,jffi,ci
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full build guide, architecture overview, and code style guidelines.
