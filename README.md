@@ -1,5 +1,11 @@
 # Chicory Redline
 
+<p align="center">
+  <picture>
+    <img width="200" src="chicory-redline.png">
+  </picture>
+</p>
+
 Build time Compiler for Wasm in Java.
 
 > **Warning**
