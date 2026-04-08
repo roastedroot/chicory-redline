@@ -8,7 +8,7 @@
   <packaging>pom</packaging>
 
   <name>chicory-redline-parent</name>
-  <description>Chicory Redline - AOT Compiler for Wasm in Java</description>
+  <description>Chicory Redline - Build time Compiler for Wasm in Java</description>
   <url>https://github.com/roastedroot/chicory-redline/</url>
 
   <licenses>
