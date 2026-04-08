@@ -34,6 +34,12 @@
     </dependency>
     <dependency>
       <groupId>com.dylibso.chicory</groupId>
+      <artifactId>wasm-corpus</artifactId>
+      <version>${chicory.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.dylibso.chicory</groupId>
       <artifactId>wasm-tools</artifactId>
       <scope>test</scope>
     </dependency>
@@ -63,13 +69,6 @@
         <groupId>com.dylibso.chicory</groupId>
         <artifactId>test-gen-plugin</artifactId>
         <version>999-SNAPSHOT</version>
-        <dependencies>
-          <dependency>
-            <groupId>com.dylibso.chicory</groupId>
-            <artifactId>wasm-corpus</artifactId>
-            <version>999-SNAPSHOT</version>
-          </dependency>
-        </dependencies>
         <configuration>
           <includedWasts>
             <wast>address.wast</wast>
