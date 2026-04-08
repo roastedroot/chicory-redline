@@ -91,7 +91,7 @@
               <goal>compile</goal>
             </goals>
             <configuration>
-              <className>io.roastedroot.cranelift.bench.Toml2JsonModule</className>
+              <name>io.roastedroot.cranelift.bench.Toml2JsonModule</name>
               <wasmFile>${project.basedir}/../wasm/toml2json.wasm</wasmFile>
               <bytecodeFallback>false</bytecodeFallback>
             </configuration>

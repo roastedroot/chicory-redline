@@ -25,7 +25,7 @@ public class CraneliftCompilerMojo extends AbstractMojo {
 
     /** Fully qualified name of the generated class (e.g. "com.example.MyModule"). */
     @Parameter(required = true)
-    private String className;
+    private String name;
 
     @Parameter(
             required = true,
@@ -60,12 +60,12 @@ public class CraneliftCompilerMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        getLog().info("Cranelift: compiling " + className + " from " + wasmFile);
+        getLog().info("Cranelift: compiling " + name + " from " + wasmFile);
 
         var configBuilder =
                 Config.builder()
                         .withWasmFile(wasmFile.toPath())
-                        .withClassName(className)
+                        .withName(name)
                         .withTargetResourceFolder(targetResourceFolder.toPath())
                         .withTargetSourceFolder(targetSourceFolder.toPath())
                         .withBytecodeFallback(bytecodeFallback)

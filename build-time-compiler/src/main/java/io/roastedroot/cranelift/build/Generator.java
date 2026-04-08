@@ -171,7 +171,7 @@ public class Generator {
 
     public void generateChicoryBytecode() throws IOException {
         var module = Parser.parse(config.wasmFile());
-        var machineName = config.className() + "Machine";
+        var machineName = config.name() + "Machine";
         var compiler =
                 Compiler.builder(module)
                         .withClassName(machineName)
@@ -216,7 +216,7 @@ public class Generator {
 
     @SuppressWarnings("StringSplitter")
     public void generateSources() throws IOException {
-        var split = config.className().split("\\.");
+        var split = config.name().split("\\.");
         var sourceFolder = config.targetSourceFolder();
         for (int i = 0; i < split.length - 1; i++) {
             sourceFolder = sourceFolder.resolve(split[i]);

@@ -8,7 +8,7 @@ import java.util.StringJoiner;
 public final class Config {
 
     private final Path wasmFile;
-    private final String className;
+    private final String name;
     private final Path targetResourceFolder;
     private final Path targetSourceFolder;
     private final List<String> targets;
@@ -18,7 +18,7 @@ public final class Config {
 
     private Config(
             Path wasmFile,
-            String className,
+            String name,
             Path targetResourceFolder,
             Path targetSourceFolder,
             List<String> targets,
@@ -26,7 +26,7 @@ public final class Config {
             String moduleInterface,
             Path targetClassFolder) {
         this.wasmFile = wasmFile;
-        this.className = className;
+        this.name = name;
         this.targetResourceFolder = targetResourceFolder;
         this.targetSourceFolder = targetSourceFolder;
         this.targets = targets;
@@ -40,8 +40,8 @@ public final class Config {
     }
 
     /** Fully qualified name of the generated class (e.g. "com.example.MyModule"). */
-    public String className() {
-        return className;
+    public String name() {
+        return name;
     }
 
     public Path targetResourceFolder() {
@@ -70,7 +70,7 @@ public final class Config {
 
     @SuppressWarnings("StringSplitter")
     public String getPackageName() {
-        var split = className.split("\\.");
+        var split = name.split("\\.");
         StringJoiner packageName = new StringJoiner(".");
         for (int i = 0; i < split.length - 1; i++) {
             packageName.add(split[i]);
@@ -80,7 +80,7 @@ public final class Config {
 
     @SuppressWarnings("StringSplitter")
     public String getBaseName() {
-        var split = className.split("\\.");
+        var split = name.split("\\.");
         return split[split.length - 1];
     }
 
@@ -90,7 +90,7 @@ public final class Config {
 
     public static final class Builder {
         private Path wasmFile;
-        private String className;
+        private String name;
         private Path targetResourceFolder;
         private Path targetSourceFolder;
         private List<String> targets;
@@ -106,8 +106,8 @@ public final class Config {
         }
 
         /** Fully qualified name of the generated class (e.g. "com.example.MyModule"). */
-        public Builder withClassName(String className) {
-            this.className = className;
+        public Builder withName(String name) {
+            this.name = name;
             return this;
         }
 
@@ -146,7 +146,7 @@ public final class Config {
                     (targets != null && !targets.isEmpty()) ? targets : CraneliftTarget.ALL_TARGETS;
             return new Config(
                     wasmFile,
-                    className,
+                    name,
                     targetResourceFolder,
                     targetSourceFolder,
                     t,

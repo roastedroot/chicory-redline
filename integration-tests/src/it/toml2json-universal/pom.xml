@@ -45,7 +45,7 @@
               <goal>compile</goal>
             </goals>
             <configuration>
-              <className>io.roastedroot.cranelift.it.Toml2JsonModule</className>
+              <name>io.roastedroot.cranelift.it.Toml2JsonModule</name>
               <wasmFile>wasm/toml2json.wasm</wasmFile>
               <bytecodeFallback>true</bytecodeFallback>
             </configuration>
