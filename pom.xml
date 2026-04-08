@@ -75,6 +75,7 @@
     <!-- runtime versions -->
     <chicory.version>1.7.5</chicory.version>
     <javaparser.version>3.28.0</javaparser.version>
+    <jffi.version>1.3.13</jffi.version>
   </properties>
 
   <dependencyManagement>
@@ -308,6 +309,7 @@
       </activation>
       <modules>
         <module>runner</module>
+        <module>runner-tests</module>
       </modules>
     </profile>
     <profile>
@@ -315,6 +317,7 @@
       <modules>
         <module>redline</module>
         <module>runner-jffi</module>
+        <module>runner-jffi-tests</module>
       </modules>
     </profile>
     <profile>
