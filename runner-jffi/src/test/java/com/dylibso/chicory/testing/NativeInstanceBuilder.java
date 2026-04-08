@@ -33,6 +33,8 @@ public final class NativeInstanceBuilder {
     }
 
     public Instance build() {
-        return delegate.build().instance();
+        CraneliftInstance ci = delegate.build();
+        CraneliftInstanceTracker.register(ci);
+        return ci.instance();
     }
 }

@@ -264,6 +264,9 @@
         <version>${surefire-plugin.version}</version>
         <configuration>
           <argLine>--enable-preview --enable-native-access=ALL-UNNAMED</argLine>
+          <properties>
+            <configurationParameters>junit.jupiter.extensions.autodetection.enabled=true</configurationParameters>
+          </properties>
         </configuration>
       </plugin>
     </plugins>
