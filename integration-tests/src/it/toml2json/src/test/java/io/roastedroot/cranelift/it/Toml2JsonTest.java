@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.it;
+package io.roastedroot.redline.it;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;

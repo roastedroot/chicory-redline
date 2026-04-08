@@ -4,11 +4,11 @@
 
   <parent>
     <groupId>io.roastedroot</groupId>
-    <artifactId>cranelift4j-parent</artifactId>
+    <artifactId>chicory-redline-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift-bridge</artifactId>
+  <artifactId>redline-bridge</artifactId>
   <packaging>jar</packaging>
 
   <name>Chicory - Cranelift Bridge</name>
@@ -46,12 +46,12 @@
         <version>${project.version}</version>
         <executions>
           <execution>
-            <id>cranelift</id>
+            <id>redline</id>
             <goals>
               <goal>compile</goal>
             </goals>
             <configuration>
-              <name>io.roastedroot.cranelift.bridge.Cranelift</name>
+              <name>io.roastedroot.redline.bridge.Cranelift</name>
               <wasmFile>${project.basedir}/../cranelift_bridge.wasm</wasmFile>
               <interpreterFallback>WARN</interpreterFallback>
             </configuration>

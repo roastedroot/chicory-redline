@@ -4,15 +4,15 @@
 
   <parent>
     <groupId>io.roastedroot</groupId>
-    <artifactId>cranelift4j-parent</artifactId>
+    <artifactId>chicory-redline-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift-api</artifactId>
+  <artifactId>redline-api</artifactId>
   <packaging>jar</packaging>
 
-  <name>Cranelift4J - API</name>
-  <description>Lightweight runtime API for Cranelift4J (no compiler dependencies)</description>
+  <name>Chicory Redline - API</name>
+  <description>Lightweight runtime API for Chicory Redline (no compiler dependencies)</description>
 
   <dependencies>
     <dependency>

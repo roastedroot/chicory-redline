@@ -4,20 +4,20 @@
 
   <parent>
     <groupId>io.roastedroot</groupId>
-    <artifactId>cranelift4j-parent</artifactId>
+    <artifactId>chicory-redline-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift-compiler-maven-plugin</artifactId>
+  <artifactId>redline-compiler-maven-plugin</artifactId>
   <packaging>maven-plugin</packaging>
 
-  <name>Cranelift4J - Compiler Maven Plugin</name>
+  <name>Chicory Redline - Compiler Maven Plugin</name>
   <description>Maven plugin to compile Wasm to native code at build time via Cranelift</description>
 
   <dependencies>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-build-time-compiler</artifactId>
+      <artifactId>redline-build-time-compiler</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -47,7 +47,7 @@
         <artifactId>maven-plugin-plugin</artifactId>
         <version>${maven-plugin-tools.version}</version>
         <configuration>
-          <goalPrefix>cranelift</goalPrefix>
+          <goalPrefix>redline</goalPrefix>
         </configuration>
         <executions>
           <execution>

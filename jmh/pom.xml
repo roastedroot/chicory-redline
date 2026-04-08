@@ -4,15 +4,15 @@
 
   <parent>
     <groupId>io.roastedroot</groupId>
-    <artifactId>cranelift4j-parent</artifactId>
+    <artifactId>chicory-redline-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift4j-jmh</artifactId>
+  <artifactId>redline-jmh</artifactId>
   <packaging>jar</packaging>
 
-  <name>Cranelift4J - JMH</name>
-  <description>JMH benchmarks for Cranelift4J</description>
+  <name>Chicory Redline - JMH</name>
+  <description>JMH benchmarks for Chicory Redline</description>
 
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
@@ -35,17 +35,17 @@
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-build-time-compiler</artifactId>
+      <artifactId>redline-build-time-compiler</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-runner</artifactId>
+      <artifactId>redline-runner</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-runner-jffi</artifactId>
+      <artifactId>redline-runner-jffi</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -74,7 +74,7 @@
               <goal>compile</goal>
             </goals>
             <configuration>
-              <name>io.roastedroot.cranelift.bench.Toml2JsonChicory</name>
+              <name>io.roastedroot.redline.bench.Toml2JsonChicory</name>
               <wasmFile>${project.basedir}/../wasm/toml2json.wasm</wasmFile>
             </configuration>
           </execution>
@@ -82,7 +82,7 @@
       </plugin>
       <plugin>
         <groupId>io.roastedroot</groupId>
-        <artifactId>cranelift-compiler-maven-plugin</artifactId>
+        <artifactId>redline-compiler-maven-plugin</artifactId>
         <version>${project.version}</version>
         <executions>
           <execution>
@@ -91,7 +91,7 @@
               <goal>compile</goal>
             </goals>
             <configuration>
-              <name>io.roastedroot.cranelift.bench.Toml2JsonModule</name>
+              <name>io.roastedroot.redline.bench.Toml2JsonModule</name>
               <wasmFile>${project.basedir}/../wasm/toml2json.wasm</wasmFile>
               <bytecodeFallback>false</bytecodeFallback>
             </configuration>

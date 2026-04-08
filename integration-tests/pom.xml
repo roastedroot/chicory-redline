@@ -4,36 +4,36 @@
 
   <parent>
     <groupId>io.roastedroot</groupId>
-    <artifactId>cranelift4j-parent</artifactId>
+    <artifactId>chicory-redline-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift4j-integration-tests</artifactId>
+  <artifactId>redline-integration-tests</artifactId>
   <packaging>jar</packaging>
 
-  <name>Cranelift4J - Integration Tests</name>
-  <description>Integration tests for the Cranelift4J Maven plugin</description>
+  <name>Chicory Redline - Integration Tests</name>
+  <description>Integration tests for the Chicory Redline Maven plugin</description>
 
   <dependencies>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-build-time-compiler</artifactId>
+      <artifactId>redline</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>redline-build-time-compiler</artifactId>
       <version>${project.version}</version>
     </dependency>
     <!-- Dummy dependencies to force reactor ordering -->
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-compiler-maven-plugin</artifactId>
+      <artifactId>redline-compiler-maven-plugin</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-runner</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift4j</artifactId>
+      <artifactId>redline-runner</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>
@@ -45,10 +45,10 @@
         <artifactId>maven-dependency-plugin</artifactId>
         <configuration>
           <ignoredUnusedDeclaredDependencies combine.children="append">
-            <dependency>io.roastedroot:cranelift-compiler-maven-plugin</dependency>
-            <dependency>io.roastedroot:cranelift-runner</dependency>
-            <dependency>io.roastedroot:cranelift-build-time-compiler</dependency>
-            <dependency>io.roastedroot:cranelift4j</dependency>
+            <dependency>io.roastedroot:redline-compiler-maven-plugin</dependency>
+            <dependency>io.roastedroot:redline-runner</dependency>
+            <dependency>io.roastedroot:redline-build-time-compiler</dependency>
+            <dependency>io.roastedroot:redline</dependency>
           </ignoredUnusedDeclaredDependencies>
         </configuration>
       </plugin>

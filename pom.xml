@@ -3,13 +3,13 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>io.roastedroot</groupId>
-  <artifactId>cranelift4j-parent</artifactId>
+  <artifactId>chicory-redline-parent</artifactId>
   <version>999-SNAPSHOT</version>
   <packaging>pom</packaging>
 
-  <name>cranelift4j-parent</name>
-  <description>Cranelift Compiler for Wasm in Java</description>
-  <url>https://github.com/roastedroot/cranelift4j/</url>
+  <name>chicory-redline-parent</name>
+  <description>Chicory Redline - AOT Compiler for Wasm in Java</description>
+  <url>https://github.com/roastedroot/chicory-redline/</url>
 
   <licenses>
     <license>
@@ -38,9 +38,9 @@
   </modules>
 
   <scm>
-    <connection>scm:git:git://github.com/roastedroot/cranelift4j.git</connection>
-    <developerConnection>scm:git:ssh://github.com:roastedroot/cranelift4j.git</developerConnection>
-    <url>http://github.com/roastedroot/cranelift4j/tree/main</url>
+    <connection>scm:git:git://github.com/roastedroot/chicory-redline.git</connection>
+    <developerConnection>scm:git:ssh://github.com:roastedroot/chicory-redline.git</developerConnection>
+    <url>http://github.com/roastedroot/chicory-redline/tree/main</url>
   </scm>
 
   <properties>
@@ -313,7 +313,7 @@
     <profile>
       <id>jffi</id>
       <modules>
-        <module>cranelift4j</module>
+        <module>redline</module>
         <module>runner-jffi</module>
       </modules>
     </profile>

@@ -4,14 +4,14 @@
 
   <parent>
     <groupId>io.roastedroot</groupId>
-    <artifactId>cranelift4j-parent</artifactId>
+    <artifactId>chicory-redline-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift-build-time-compiler</artifactId>
+  <artifactId>redline-build-time-compiler</artifactId>
   <packaging>jar</packaging>
 
-  <name>Cranelift4J - Build Time Compiler</name>
+  <name>Chicory Redline - Build Time Compiler</name>
   <description>Build-time compilation of Wasm to native code via Cranelift</description>
 
   <dependencies>
@@ -33,7 +33,7 @@
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-compiler</artifactId>
+      <artifactId>redline-compiler</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>

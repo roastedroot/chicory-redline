@@ -3,10 +3,10 @@ package com.dylibso.chicory.testing;
 import com.dylibso.chicory.runtime.ImportValues;
 import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.wasm.WasmModule;
-import io.roastedroot.cranelift.api.CraneliftInstance;
-import io.roastedroot.cranelift.api.CraneliftTarget;
-import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
-import io.roastedroot.cranelift.runner.NativeMachineFactory;
+import io.roastedroot.redline.api.RedlineInstance;
+import io.roastedroot.redline.api.RedlineTarget;
+import io.roastedroot.redline.compiler.internal.NativeCompiler;
+import io.roastedroot.redline.runner.NativeMachineFactory;
 
 /**
  * Test-only adapter that wraps {@link NativeMachineFactory.Builder} and
@@ -14,16 +14,15 @@ import io.roastedroot.cranelift.runner.NativeMachineFactory;
  */
 public final class NativeInstanceBuilder {
 
-    private final CraneliftInstance.Builder delegate;
+    private final RedlineInstance.Builder delegate;
 
-    private NativeInstanceBuilder(CraneliftInstance.Builder delegate) {
+    private NativeInstanceBuilder(RedlineInstance.Builder delegate) {
         this.delegate = delegate;
     }
 
     public static NativeInstanceBuilder builder(WasmModule module) {
         var b = NativeMachineFactory.builder(module);
-        b.withCompilerFunction(
-                m -> new NativeCompiler(CraneliftTarget.detectHost(), m).compileAll());
+        b.withCompilerFunction(m -> new NativeCompiler(RedlineTarget.detectHost(), m).compileAll());
         return new NativeInstanceBuilder(b);
     }
 
@@ -38,8 +37,8 @@ public final class NativeInstanceBuilder {
     }
 
     public Instance build() {
-        CraneliftInstance ci = delegate.build();
-        CraneliftInstanceTracker.register(ci);
+        RedlineInstance ci = delegate.build();
+        RedlineInstanceTracker.register(ci);
         return ci.instance();
     }
 }

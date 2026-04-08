@@ -4,14 +4,14 @@
 
   <parent>
     <groupId>io.roastedroot</groupId>
-    <artifactId>cranelift4j-parent</artifactId>
+    <artifactId>chicory-redline-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift-runner</artifactId>
+  <artifactId>redline-runner</artifactId>
   <packaging>jar</packaging>
 
-  <name>Cranelift4J - Runner</name>
+  <name>Chicory Redline - Runner</name>
   <description>Native code execution via Panama FFM (Java 25)</description>
 
   <properties>
@@ -29,7 +29,7 @@
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-api</artifactId>
+      <artifactId>redline-api</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -45,7 +45,7 @@
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-compiler</artifactId>
+      <artifactId>redline-compiler</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>

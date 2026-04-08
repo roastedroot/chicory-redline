@@ -4,14 +4,14 @@
 
   <parent>
     <groupId>io.roastedroot</groupId>
-    <artifactId>cranelift4j-parent</artifactId>
+    <artifactId>chicory-redline-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift-compiler</artifactId>
+  <artifactId>redline-compiler</artifactId>
   <packaging>jar</packaging>
 
-  <name>Cranelift4J - Compiler</name>
+  <name>Chicory Redline - Compiler</name>
   <description>Wasm to native code compilation via Cranelift (Java 11, no Panama)</description>
 
   <dependencies>
@@ -25,12 +25,12 @@
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-api</artifactId>
+      <artifactId>redline-api</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-bridge</artifactId>
+      <artifactId>redline-bridge</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>

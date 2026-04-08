@@ -17,7 +17,7 @@ import com.dylibso.chicory.wasm.types.Table;
 import com.dylibso.chicory.wasm.types.TableLimits;
 import com.dylibso.chicory.wasm.types.ValType;
 import com.dylibso.chicory.wasm.types.Value;
-import io.roastedroot.cranelift.runner.NativeMachineFactory;
+import io.roastedroot.redline.runner.NativeMachineFactory;
 import java.util.List;
 
 // https://github.com/WebAssembly/spec/blob/ee82c8e50c5106e0cedada0a083d4cc4129034a2/interpreter/host/spectest.ml

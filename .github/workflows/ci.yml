@@ -51,7 +51,7 @@ jobs:
       working-directory: chicory
       run: mvn -B -Dquickly
 
-    - name: Test cranelift4j
+    - name: Test chicory-redline
       run: mvn -B install -P panama,jffi
 
     - name: Publish Test Report

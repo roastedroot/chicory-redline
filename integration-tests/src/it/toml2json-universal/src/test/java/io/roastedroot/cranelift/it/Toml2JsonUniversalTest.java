@@ -1,10 +1,10 @@
-package io.roastedroot.cranelift.it;
+package io.roastedroot.redline.it;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.dylibso.chicory.runtime.Instance;
-import io.roastedroot.cranelift4j.UniversalInstance;
+import io.roastedroot.redline.UniversalInstance;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
