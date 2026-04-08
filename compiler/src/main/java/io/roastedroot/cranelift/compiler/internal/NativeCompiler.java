@@ -7,6 +7,8 @@ import com.dylibso.chicory.wasm.types.ExternalType;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.OpCode;
 import com.dylibso.chicory.wasm.types.ValType;
+import io.roastedroot.cranelift.api.internal.CtxBuffer;
+import io.roastedroot.cranelift.api.internal.TypeMapUtils;
 import io.roastedroot.cranelift.bridge.CraneliftBridge;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -49,7 +51,7 @@ public final class NativeCompiler {
                         module.importSection().stream()
                                 .filter(i -> i.importType() == ExternalType.FUNCTION)
                                 .count();
-        this.canonicalTypeMap = buildCanonicalTypeMap(module);
+        this.canonicalTypeMap = TypeMapUtils.buildCanonicalTypeMap(module);
     }
 
     private NativeCompiler(CraneliftBridge bridge, String triple, WasmModule module) {
@@ -61,35 +63,7 @@ public final class NativeCompiler {
                         module.importSection().stream()
                                 .filter(i -> i.importType() == ExternalType.FUNCTION)
                                 .count();
-        this.canonicalTypeMap = buildCanonicalTypeMap(module);
-    }
-
-    /**
-     * Build a map from raw type index to canonical type index.
-     * Structurally equal FunctionTypes get the same canonical index,
-     * enabling correct call_indirect type checking with duplicate types.
-     */
-    public static int[] buildCanonicalTypeMap(WasmModule module) {
-        var ts = module.typeSection();
-        int count = ts.subTypeCount();
-        int[] map = new int[count];
-        var seen = new java.util.HashMap<FunctionType, Integer>();
-        for (int i = 0; i < count; i++) {
-            var type = ts.getType(i);
-            if (type instanceof FunctionType) {
-                FunctionType ft = (FunctionType) type;
-                Integer canonical = seen.get(ft);
-                if (canonical != null) {
-                    map[i] = canonical;
-                } else {
-                    seen.put(ft, i);
-                    map[i] = i;
-                }
-            } else {
-                map[i] = i; // non-function types keep their own index
-            }
-        }
-        return map;
+        this.canonicalTypeMap = TypeMapUtils.buildCanonicalTypeMap(module);
     }
 
     // --- Control frame ---

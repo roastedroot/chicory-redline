@@ -6,8 +6,8 @@ import com.dylibso.chicory.wasm.ChicoryException;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.ValType;
 import com.dylibso.chicory.wasm.types.Value;
-import io.roastedroot.cranelift.compiler.internal.CtxBuffer;
-import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
+import io.roastedroot.cranelift.api.internal.CtxBuffer;
+import io.roastedroot.cranelift.api.internal.TypeMapUtils;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -18,6 +18,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.ref.Cleaner;
 import java.util.ArrayList;
+import java.util.function.Function;
 
 /**
  * Machine implementation that compiles Wasm functions to native x86_64
@@ -101,7 +102,7 @@ public final class NativeMachine implements Machine {
             java.util.List<NativeTable> sharedTables,
             MemorySegment sharedGlobalsBuffer,
             byte[][] precompiledCode,
-            boolean runtimeCompilation) {
+            Function<com.dylibso.chicory.wasm.WasmModule, byte[][]> compilerFunction) {
         this.instance = instance;
         this.arena = arena;
         var module = instance.module();
@@ -144,7 +145,7 @@ public final class NativeMachine implements Machine {
         // Allocate funcTypes array with canonical type indices.
         // Structurally equal FunctionTypes get the same canonical index,
         // enabling correct call_indirect type checking with duplicate types.
-        int[] canonicalTypeMap = NativeCompiler.buildCanonicalTypeMap(module);
+        int[] canonicalTypeMap = TypeMapUtils.buildCanonicalTypeMap(module);
         this.funcTypesArray = arena.allocate((long) totalFuncs * 4, 4);
         for (int i = 0; i < numImports; i++) {
             int rawType = instance.functionType(i);
@@ -184,11 +185,8 @@ public final class NativeMachine implements Machine {
         byte[][] compiledCode;
         if (precompiledCode != null) {
             compiledCode = precompiledCode;
-        } else if (runtimeCompilation) {
-            var compiler =
-                    new NativeCompiler(
-                            io.roastedroot.cranelift.compiler.CraneliftTarget.detectHost(), module);
-            compiledCode = compiler.compileAll();
+        } else if (compilerFunction != null) {
+            compiledCode = compilerFunction.apply(module);
         } else {
             throw new ChicoryException(
                     "No precompiled code provided. Use the cranelift-compiler-maven-plugin"

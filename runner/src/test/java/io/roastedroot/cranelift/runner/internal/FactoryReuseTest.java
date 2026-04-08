@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.dylibso.chicory.tools.wasm.Wat2Wasm;
 import com.dylibso.chicory.wasm.Parser;
+import io.roastedroot.cranelift.api.CraneliftTarget;
+import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
 import io.roastedroot.cranelift.runner.NativeMachineFactory;
 import org.junit.jupiter.api.Test;
 
@@ -23,7 +25,13 @@ public class FactoryReuseTest {
         var module = Parser.parse(Wat2Wasm.parse(wat));
 
         for (int i = 0; i < 3; i++) {
-            try (var ni = NativeMachineFactory.builder(module).build()) {
+            try (var ni =
+                    NativeMachineFactory.builder(module)
+                            .withCompilerFunction(
+                                    m ->
+                                            new NativeCompiler(CraneliftTarget.detectHost(), m)
+                                                    .compileAll())
+                            .build()) {
                 // Each instance should start fresh — global starts at 0
                 var inc = ni.instance().export("inc");
                 assertEquals(1L, inc.apply()[0], "iteration " + i + ": first inc");
@@ -49,7 +57,13 @@ public class FactoryReuseTest {
         var module = Parser.parse(Wat2Wasm.parse(wat));
 
         for (int i = 0; i < 3; i++) {
-            try (var ni = NativeMachineFactory.builder(module).build()) {
+            try (var ni =
+                    NativeMachineFactory.builder(module)
+                            .withCompilerFunction(
+                                    m ->
+                                            new NativeCompiler(CraneliftTarget.detectHost(), m)
+                                                    .compileAll())
+                            .build()) {
                 var callTable = ni.instance().export("call_table");
                 assertEquals(42L, callTable.apply(0)[0], "iteration " + i + ": f1");
                 assertEquals(99L, callTable.apply(1)[0], "iteration " + i + ": f2");

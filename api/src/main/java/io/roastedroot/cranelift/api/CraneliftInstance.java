@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler;
+package io.roastedroot.cranelift.api;
 
 import com.dylibso.chicory.runtime.ImportValues;
 import com.dylibso.chicory.runtime.Instance;
@@ -58,6 +58,11 @@ public final class CraneliftInstance implements AutoCloseable {
     /** Return the underlying Chicory {@link Instance}. */
     public Instance instance() {
         return instance;
+    }
+
+    /** Convenience shortcut for {@code instance().memory()}. */
+    public Memory memory() {
+        return instance.memory();
     }
 
     /**

@@ -8,11 +8,11 @@
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>cranelift4j</artifactId>
+  <artifactId>cranelift-api</artifactId>
   <packaging>jar</packaging>
 
-  <name>Cranelift4J - Universal Runtime</name>
-  <description>All-in-one runtime: Cranelift native (Panama/jffi) with Chicory bytecode fallback</description>
+  <name>Cranelift4J - API</name>
+  <description>Lightweight runtime API for Cranelift4J (no compiler dependencies)</description>
 
   <dependencies>
     <dependency>
@@ -20,14 +20,8 @@
       <artifactId>runtime</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-api</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-runner-jffi</artifactId>
-      <version>${project.version}</version>
+      <groupId>com.dylibso.chicory</groupId>
+      <artifactId>wasm</artifactId>
     </dependency>
   </dependencies>
 

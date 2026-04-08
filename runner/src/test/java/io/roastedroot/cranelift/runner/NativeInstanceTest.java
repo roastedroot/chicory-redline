@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.dylibso.chicory.tools.wasm.Wat2Wasm;
 import com.dylibso.chicory.wasm.Parser;
+import io.roastedroot.cranelift.api.CraneliftTarget;
+import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,7 +30,13 @@ public class NativeInstanceTest {
         long vmBefore = readVmSizeKb();
 
         for (int i = 0; i < 20; i++) {
-            try (var ni = NativeMachineFactory.builder(module).build()) {
+            try (var ni =
+                    NativeMachineFactory.builder(module)
+                            .withCompilerFunction(
+                                    m ->
+                                            new NativeCompiler(CraneliftTarget.detectHost(), m)
+                                                    .compileAll())
+                            .build()) {
                 var f = ni.instance().export("f");
                 assertEquals(42L, f.apply()[0]);
             }

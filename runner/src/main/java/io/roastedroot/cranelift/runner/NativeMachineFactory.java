@@ -11,7 +11,7 @@ import com.dylibso.chicory.wasm.types.MemoryLimits;
 import com.dylibso.chicory.wasm.types.MutabilityType;
 import com.dylibso.chicory.wasm.types.Table;
 import com.dylibso.chicory.wasm.types.ValType;
-import io.roastedroot.cranelift.compiler.CraneliftInstance;
+import io.roastedroot.cranelift.api.CraneliftInstance;
 import io.roastedroot.cranelift.runner.internal.NativeGlobalInstance;
 import io.roastedroot.cranelift.runner.internal.NativeMachine;
 import io.roastedroot.cranelift.runner.internal.NativeMemory;
@@ -20,6 +20,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * Public API for the Cranelift native compiler.
@@ -40,17 +41,19 @@ public final class NativeMachineFactory implements AutoCloseable {
     private final Arena arena = Arena.ofShared();
     private final WasmModule module;
     private final byte[][] precompiledCode;
-    private final boolean runtimeCompilation;
+    private final Function<WasmModule, byte[][]> compilerFunction;
     private final List<NativeTable> nativeTables = new ArrayList<>();
     private MemorySegment globalsBuffer;
     private int globalIndex;
     private NativeMachine nativeMachine;
 
     private NativeMachineFactory(
-            WasmModule module, byte[][] precompiledCode, boolean runtimeCompilation) {
+            WasmModule module,
+            byte[][] precompiledCode,
+            Function<WasmModule, byte[][]> compilerFunction) {
         this.module = module;
         this.precompiledCode = precompiledCode;
-        this.runtimeCompilation = runtimeCompilation;
+        this.compilerFunction = compilerFunction;
 
         // Pre-allocate globals buffer
         int importGlobalCount =
@@ -115,7 +118,7 @@ public final class NativeMachineFactory implements AutoCloseable {
                         nativeTables,
                         globalsBuffer,
                         precompiledCode,
-                        runtimeCompilation);
+                        compilerFunction);
         return nativeMachine;
     }
 
@@ -147,7 +150,7 @@ public final class NativeMachineFactory implements AutoCloseable {
 
         private final WasmModule module;
         private byte[][] precompiledCode;
-        private boolean runtimeCompilation = true;
+        private Function<WasmModule, byte[][]> compilerFunction;
         private ImportValues importValues;
         private MemoryLimits memoryLimits;
         private boolean start = true;
@@ -160,7 +163,11 @@ public final class NativeMachineFactory implements AutoCloseable {
         @Override
         public Builder withPrecompiledCode(byte[][] precompiledCode) {
             this.precompiledCode = precompiledCode;
-            this.runtimeCompilation = false;
+            return this;
+        }
+
+        public Builder withCompilerFunction(Function<WasmModule, byte[][]> compilerFunction) {
+            this.compilerFunction = compilerFunction;
             return this;
         }
 
@@ -190,7 +197,7 @@ public final class NativeMachineFactory implements AutoCloseable {
 
         @Override
         public CraneliftInstance build() {
-            var factory = new NativeMachineFactory(module, precompiledCode, runtimeCompilation);
+            var factory = new NativeMachineFactory(module, precompiledCode, compilerFunction);
             var instanceBuilder =
                     Instance.builder(module)
                             .withMachineFactory(factory::compile)

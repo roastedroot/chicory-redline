@@ -3,8 +3,8 @@ package io.roastedroot.cranelift.runner;
 import com.dylibso.chicory.runtime.Memory;
 import com.dylibso.chicory.wasm.WasmModule;
 import com.dylibso.chicory.wasm.types.MemoryLimits;
-import io.roastedroot.cranelift.compiler.CraneliftInstance;
-import io.roastedroot.cranelift.compiler.CraneliftMachineFactoryProvider;
+import io.roastedroot.cranelift.api.CraneliftInstance;
+import io.roastedroot.cranelift.api.CraneliftMachineFactoryProvider;
 
 /**
  * SPI provider for the Panama FFM backend (Java 25+).

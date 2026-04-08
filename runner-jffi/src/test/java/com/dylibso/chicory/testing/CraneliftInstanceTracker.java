@@ -1,6 +1,6 @@
 package com.dylibso.chicory.testing;
 
-import io.roastedroot.cranelift.compiler.CraneliftInstance;
+import io.roastedroot.cranelift.api.CraneliftInstance;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import org.junit.jupiter.api.extension.AfterAllCallback;

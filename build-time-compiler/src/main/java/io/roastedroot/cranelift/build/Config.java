@@ -1,6 +1,6 @@
 package io.roastedroot.cranelift.build;
 
-import io.roastedroot.cranelift.compiler.CraneliftTarget;
+import io.roastedroot.cranelift.api.CraneliftTarget;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.StringJoiner;

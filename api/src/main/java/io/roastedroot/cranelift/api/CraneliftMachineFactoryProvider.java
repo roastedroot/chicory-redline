@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler;
+package io.roastedroot.cranelift.api;
 
 import com.dylibso.chicory.runtime.Memory;
 import com.dylibso.chicory.wasm.WasmModule;

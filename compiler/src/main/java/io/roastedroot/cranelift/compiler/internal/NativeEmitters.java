@@ -3,6 +3,7 @@ package io.roastedroot.cranelift.compiler.internal;
 import com.dylibso.chicory.wasm.types.AnnotatedInstruction;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.ValType;
+import io.roastedroot.cranelift.api.internal.CtxBuffer;
 
 /**
  * Static methods that emit Cranelift IR for each opcode category.

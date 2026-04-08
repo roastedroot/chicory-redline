@@ -1,7 +1,7 @@
 package io.roastedroot.cranelift.runner;
 
 import com.dylibso.chicory.runtime.Instance;
-import io.roastedroot.cranelift.compiler.CraneliftInstance;
+import io.roastedroot.cranelift.api.CraneliftInstance;
 
 /**
  * AutoCloseable wrapper around a Chicory {@link Instance} backed by native

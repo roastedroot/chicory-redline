@@ -30,12 +30,7 @@
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-bridge</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.roastedroot</groupId>
-      <artifactId>cranelift-compiler</artifactId>
+      <artifactId>cranelift-api</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -54,6 +49,12 @@
     <dependency>
       <groupId>com.dylibso.chicory</groupId>
       <artifactId>wasm-tools</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>cranelift-compiler</artifactId>
+      <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>

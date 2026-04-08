@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.dylibso.chicory.tools.wasm.Wat2Wasm;
 import com.dylibso.chicory.wasm.Parser;
 import com.dylibso.chicory.wasm.types.MemoryLimits;
+import io.roastedroot.cranelift.api.CraneliftTarget;
+import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
 import io.roastedroot.cranelift.runner.NativeMachineFactory;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -42,7 +44,13 @@ public class NativeMemoryLeakTest {
         long vmBefore = readVmSizeKb();
 
         for (int i = 0; i < 20; i++) {
-            try (var ni = NativeMachineFactory.builder(module).build()) {
+            try (var ni =
+                    NativeMachineFactory.builder(module)
+                            .withCompilerFunction(
+                                    m ->
+                                            new NativeCompiler(CraneliftTarget.detectHost(), m)
+                                                    .compileAll())
+                            .build()) {
                 // just create and close
             }
         }

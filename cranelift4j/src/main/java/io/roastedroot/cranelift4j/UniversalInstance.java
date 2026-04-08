@@ -5,7 +5,7 @@ import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.runtime.Machine;
 import com.dylibso.chicory.wasm.WasmModule;
 import com.dylibso.chicory.wasm.types.MemoryLimits;
-import io.roastedroot.cranelift.compiler.CraneliftInstance;
+import io.roastedroot.cranelift.api.CraneliftInstance;
 import java.util.function.Function;
 
 /**

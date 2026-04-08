@@ -9,7 +9,7 @@ import com.dylibso.chicory.wasm.types.Table;
 import com.dylibso.chicory.wasm.types.TableLimits;
 import com.dylibso.chicory.wasm.types.ValType;
 import com.kenai.jffi.MemoryIO;
-import io.roastedroot.cranelift.compiler.internal.CtxBuffer;
+import io.roastedroot.cranelift.api.internal.CtxBuffer;
 
 /**
  * Off-heap table implementation for native compilation via jffi.

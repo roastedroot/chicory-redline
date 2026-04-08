@@ -5,6 +5,7 @@ import com.dylibso.chicory.wasm.types.ExternalType;
 import com.dylibso.chicory.wasm.types.FunctionImport;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.ValType;
+import io.roastedroot.cranelift.api.internal.CtxBuffer;
 import io.roastedroot.cranelift.bridge.CraneliftBridge;
 import java.util.Map;
 

@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler.internal;
+package io.roastedroot.cranelift.api.internal;
 
 /**
  * Defines the layout of the shared context buffer (ctxBuffer) used to pass

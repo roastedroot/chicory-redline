@@ -152,7 +152,7 @@ try (var ni = MyModule.builder().build()) {
 }
 ```
 
-Direct API (`io.roastedroot.cranelift.compiler.CraneliftInstance`):
+Direct API (`io.roastedroot.cranelift.api.CraneliftInstance`):
 
 ```java
 // Runtime compilation (auto-discovers backend via SPI)

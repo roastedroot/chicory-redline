@@ -1,4 +1,4 @@
-package io.roastedroot.cranelift.compiler;
+package io.roastedroot.cranelift.api;
 
 import java.util.Arrays;
 import java.util.Collections;

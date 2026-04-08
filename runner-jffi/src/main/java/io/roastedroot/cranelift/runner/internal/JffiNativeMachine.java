@@ -17,8 +17,8 @@ import com.kenai.jffi.Library;
 import com.kenai.jffi.MemoryIO;
 import com.kenai.jffi.PageManager;
 import com.kenai.jffi.Type;
-import io.roastedroot.cranelift.compiler.internal.CtxBuffer;
-import io.roastedroot.cranelift.compiler.internal.NativeCompiler;
+import io.roastedroot.cranelift.api.internal.CtxBuffer;
+import io.roastedroot.cranelift.api.internal.TypeMapUtils;
 import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.List;
@@ -111,7 +111,8 @@ public final class JffiNativeMachine implements Machine {
             List<JffiNativeTable> sharedTables,
             long sharedGlobalsBufferAddr,
             byte[][] precompiledCode,
-            boolean runtimeCompilation) {
+            java.util.function.Function<com.dylibso.chicory.wasm.WasmModule, byte[][]>
+                    compilerFunction) {
         this.instance = instance;
         var module = instance.module();
         this.numImports =
@@ -154,7 +155,7 @@ public final class JffiNativeMachine implements Machine {
         this.argsBufferAddr = MEM.allocateMemory((long) CtxBuffer.ARGS_BUFFER_CAPACITY * 8, true);
 
         // Allocate funcTypes array with canonical type indices
-        int[] canonicalTypeMap = NativeCompiler.buildCanonicalTypeMap(module);
+        int[] canonicalTypeMap = TypeMapUtils.buildCanonicalTypeMap(module);
         this.funcTypesArraySize = (long) totalFuncs * 4;
         this.funcTypesArrayAddr = MEM.allocateMemory(funcTypesArraySize, true);
         for (int i = 0; i < numImports; i++) {
@@ -193,11 +194,8 @@ public final class JffiNativeMachine implements Machine {
         byte[][] compiledCode;
         if (precompiledCode != null) {
             compiledCode = precompiledCode;
-        } else if (runtimeCompilation) {
-            var compiler =
-                    new NativeCompiler(
-                            io.roastedroot.cranelift.compiler.CraneliftTarget.detectHost(), module);
-            compiledCode = compiler.compileAll();
+        } else if (compilerFunction != null) {
+            compiledCode = compilerFunction.apply(module);
         } else {
             throw new ChicoryException(
                     "No precompiled code provided. Use the cranelift-compiler-maven-plugin"

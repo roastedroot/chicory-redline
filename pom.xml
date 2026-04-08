@@ -30,6 +30,7 @@
   </developers>
 
   <modules>
+    <module>api</module>
     <module>bridge</module>
     <module>build-time-compiler</module>
     <module>compiler</module>
@@ -306,8 +307,6 @@
         <jdk>[25,)</jdk>
       </activation>
       <modules>
-        <module>integration-tests</module>
-        <module>jmh</module>
         <module>runner</module>
       </modules>
     </profile>
@@ -316,6 +315,13 @@
       <modules>
         <module>cranelift4j</module>
         <module>runner-jffi</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>ci</id>
+      <modules>
+        <module>integration-tests</module>
+        <module>jmh</module>
       </modules>
     </profile>
     <profile>
