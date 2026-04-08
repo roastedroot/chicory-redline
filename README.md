@@ -17,6 +17,10 @@ The compilation pipeline:
    - **jffi** (Java 11+, adds ~200KB)
 3. **Fallback** -- When the target architecture/OS has no precompiled native code, Redline can fall back to Chicory's pure-Java bytecode compiler transparently.
 
+### Why not Wasmtime + JNI?
+
+Other projects integrate Wasmtime (or similar runtimes) via JNI bindings to a platform-specific native library. Redline takes a different path: Cranelift itself is compiled to Wasm and executed at build time through Chicory. There is no native compiler to ship, link, or maintain -- and on Java 25+ (Panama) the result is **zero runtime dependencies**.
+
 ### Supported Platforms
 
 | OS | x86_64 | aarch64 |
