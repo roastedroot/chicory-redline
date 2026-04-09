@@ -8,7 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 cranelift-codegen = { version = "0.129", default-features = false, features = ["std", "x86", "arm64"] }
-cranelift-frontend = "0.129"
+cranelift-frontend = "0.130"
 cranelift-control = "0.129"
 target-lexicon = "0.13"
 
