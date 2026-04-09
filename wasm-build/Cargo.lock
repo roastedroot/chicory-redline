@@ -64,7 +64,7 @@ name = "cranelift-bridge"
 version = "0.1.0"
 dependencies = [
  "cranelift-codegen",
- "cranelift-control",
+ "cranelift-control 0.130.1",
  "cranelift-frontend",
  "target-lexicon",
 ]
@@ -81,7 +81,7 @@ dependencies = [
  "cranelift-bitset",
  "cranelift-codegen-meta",
  "cranelift-codegen-shared",
- "cranelift-control",
+ "cranelift-control 0.129.2",
  "cranelift-entity",
  "cranelift-isle",
  "gimli",
@@ -116,9 +116,18 @@ checksum = "20c07c6c440bd1bf920ff7597a1e743ede1f68dcd400730bd6d389effa7662af"
 
 [[package]]
 name = "cranelift-control"
-version = "0.129.1"
+version = "0.129.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8797c022e02521901e1aee483dea3ed3c67f2bf0a26405c9dd48e8ee7a70944b"
+checksum = "a18e94519070dc56cddb71906a08cea6a28a1d7c58ed501b88f273fa6b45fa07"
+dependencies = [
+ "arbitrary",
+]
+
+[[package]]
+name = "cranelift-control"
+version = "0.130.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "803159df35cc398ae54473c150b16d6c77e92ab2948be638488de126a3328fbc"
 dependencies = [
  "arbitrary",
 ]
