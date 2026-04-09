@@ -69,13 +69,14 @@ Users pick one dependency -- the SPI discovers it automatically:
 | Profile | Modules | Activation |
 |---|---|---|
 | `panama` | `runner` | Auto on JDK 25+ |
+| `panama-tests` | `runner-tests` | Auto on JDK 25+ |
 | `jffi` | `redline`, `runner-jffi` | Manual (`-P jffi`) |
-| `ci` | `runner-tests`, `runner-jffi-tests`, `integration-tests`, `jmh` | Manual (`-P ci`) |
+| `ci` | `runner-jffi-tests`, `integration-tests`, `jmh` | Manual (`-P ci`) |
 | `release` | GPG signing, javadoc, source jars, Maven Central deploy | Manual (`-P release`) |
 
 Base modules (api, bridge, compiler, build-time-compiler, compiler-maven-plugin) always build regardless of profiles.
 
-Test modules (`runner-tests`, `runner-jffi-tests`) live in the `ci` profile to keep them out of the release reactor. Activate `-P ci` to run the spec tests locally.
+Test modules are kept out of the release reactor. `runner-tests` auto-activates on JDK 25+ (same as `panama`). `runner-jffi-tests` lives in the `ci` profile. Activate `-P ci` to run the jffi spec tests locally.
 
 ### Key packages
 

@@ -319,12 +319,20 @@
       </modules>
     </profile>
     <profile>
+      <id>panama-tests</id>
+      <activation>
+        <jdk>[25,)</jdk>
+      </activation>
+      <modules>
+        <module>runner-tests</module>
+      </modules>
+    </profile>
+    <profile>
       <id>ci</id>
       <modules>
         <module>integration-tests</module>
         <module>jmh</module>
         <module>runner-jffi-tests</module>
-        <module>runner-tests</module>
       </modules>
     </profile>
     <profile>
