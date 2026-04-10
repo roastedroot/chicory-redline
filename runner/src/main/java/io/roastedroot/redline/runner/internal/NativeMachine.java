@@ -17,6 +17,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.ref.Cleaner;
+import java.lang.ref.Reference;
 import java.util.ArrayList;
 import java.util.function.Function;
 
@@ -965,6 +966,11 @@ public final class NativeMachine implements Machine {
         } catch (Throwable e) {
             sneakyThrow(e);
             throw new AssertionError("unreachable");
+        } finally {
+            // Prevent the JIT from considering this machine unreachable during
+            // the native call, which would let the Cleaner free native memory
+            // (ctxBuffer, funcTypesArray, code region) while code is executing.
+            Reference.reachabilityFence(this);
         }
     }
 

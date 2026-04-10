@@ -20,6 +20,7 @@ import com.kenai.jffi.Type;
 import io.roastedroot.redline.api.internal.CtxBuffer;
 import io.roastedroot.redline.api.internal.TypeMapUtils;
 import java.lang.ref.Cleaner;
+import java.lang.ref.Reference;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -100,6 +101,9 @@ public final class JffiNativeMachine implements Machine {
     private boolean memBaseInitialized;
     private final Cleaner.Cleanable cleanable;
     private volatile Throwable pendingException;
+
+    // Mutable holder for lazily-allocated table state, shared with CleanupAction
+    private final LazyTableState lazyTableState = new LazyTableState();
 
     // Keep closure handles alive to prevent GC
     private final Closure.Handle trampolineHandle;
@@ -287,11 +291,18 @@ public final class JffiNativeMachine implements Machine {
                                 trampolineHandle,
                                 memGrowHandle,
                                 importHandles,
-                                nativeMemory));
+                                nativeMemory,
+                                lazyTableState));
     }
 
     public void close() {
         cleanable.clean();
+    }
+
+    private static final class LazyTableState {
+        volatile long tablePtrsArrayAddr;
+        volatile JffiNativeTable[] nativeTables;
+        volatile boolean[] ownedTableIndices;
     }
 
     private static final class CleanupAction implements Runnable {
@@ -305,6 +316,7 @@ public final class JffiNativeMachine implements Machine {
         private final Closure.Handle memGrowHandle;
         private final Closure.Handle[] importHandles;
         private final JffiNativeMemory nativeMemory;
+        private final LazyTableState lazyTableState;
 
         CleanupAction(
                 long ctxBufferAddr,
@@ -316,7 +328,8 @@ public final class JffiNativeMachine implements Machine {
                 Closure.Handle trampolineHandle,
                 Closure.Handle memGrowHandle,
                 Closure.Handle[] importHandles,
-                JffiNativeMemory nativeMemory) {
+                JffiNativeMemory nativeMemory,
+                LazyTableState lazyTableState) {
             this.ctxBufferAddr = ctxBufferAddr;
             this.funcTableAddr = funcTableAddr;
             this.argsBufferAddr = argsBufferAddr;
@@ -327,12 +340,29 @@ public final class JffiNativeMachine implements Machine {
             this.memGrowHandle = memGrowHandle;
             this.importHandles = importHandles;
             this.nativeMemory = nativeMemory;
+            this.lazyTableState = lazyTableState;
         }
 
         @Override
         public void run() {
             if (nativeMemory != null) {
                 nativeMemory.close();
+            }
+            // Free lazily-allocated table pointer array
+            if (lazyTableState.tablePtrsArrayAddr != 0) {
+                MEM.freeMemory(lazyTableState.tablePtrsArrayAddr);
+            }
+            // Free table buffers — only those we created (wrapped imports),
+            // not factory-created tables which the Instance may still reference
+            if (lazyTableState.nativeTables != null) {
+                for (int i = 0; i < lazyTableState.nativeTables.length; i++) {
+                    JffiNativeTable table = lazyTableState.nativeTables[i];
+                    if (table != null
+                            && lazyTableState.ownedTableIndices != null
+                            && lazyTableState.ownedTableIndices[i]) {
+                        table.free();
+                    }
+                }
             }
             // Free closures
             trampolineHandle.free();
@@ -739,10 +769,12 @@ public final class JffiNativeMachine implements Machine {
 
         if (tableCount == 0) {
             this.nativeTables = new JffiNativeTable[0];
+            lazyTableState.nativeTables = this.nativeTables;
             return;
         }
 
         this.nativeTables = new JffiNativeTable[tableCount];
+        boolean[] owned = new boolean[tableCount];
         this.tablePtrsArrayAddr = MEM.allocateMemory((long) tableCount * 8, true);
 
         for (int i = 0; i < tableCount; i++) {
@@ -759,10 +791,16 @@ public final class JffiNativeMachine implements Machine {
                     nt.setRef(j, table.ref(j), instance);
                 }
                 nativeTables[i] = nt;
+                owned[i] = true;
             }
 
             MEM.putLong(tablePtrsArrayAddr + (long) i * 8, nativeTables[i].nativeBufferAddress());
         }
+
+        // Update lazy state so CleanupAction can free these
+        lazyTableState.tablePtrsArrayAddr = this.tablePtrsArrayAddr;
+        lazyTableState.nativeTables = this.nativeTables;
+        lazyTableState.ownedTableIndices = owned;
 
         MEM.putLong(ctxBufferAddr + CtxBuffer.TABLE_PTRS, tablePtrsArrayAddr);
     }
@@ -974,6 +1012,11 @@ public final class JffiNativeMachine implements Machine {
         } catch (Throwable e) {
             sneakyThrow(e);
             throw new AssertionError("unreachable");
+        } finally {
+            // Prevent the JIT from considering this machine unreachable during
+            // the native call, which would let the Cleaner free native memory
+            // (ctxBuffer, funcTypesArray, code region) while code is executing.
+            Reference.reachabilityFence(this);
         }
     }
 
