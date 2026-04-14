@@ -21,8 +21,6 @@ import java.util.function.Function;
  */
 public final class UniversalInstance {
 
-    private static final System.Logger LOGGER = System.getLogger(UniversalInstance.class.getName());
-
     private UniversalInstance() {}
 
     /**
@@ -104,15 +102,9 @@ public final class UniversalInstance {
                         b.withMemoryLimits(memoryLimits);
                     }
                     var result = b.build();
-                    LOGGER.log(System.Logger.Level.INFO, "Using Redline native backend");
                     return result;
                 } catch (IllegalStateException e) {
                     // No native runner on classpath — fall through to Chicory
-                    LOGGER.log(
-                            System.Logger.Level.DEBUG,
-                            "Native runner not available, falling back to Chicory"
-                                    + " bytecode: {0}",
-                            e.getMessage());
                 }
             }
 
@@ -123,7 +115,6 @@ public final class UniversalInstance {
                                 + "Call withChicoryFallback() or ensure a native runner "
                                 + "is on the classpath.");
             }
-            LOGGER.log(System.Logger.Level.INFO, "Using Chicory JVM bytecode backend");
             var ib =
                     Instance.builder(module)
                             .withMachineFactory(chicoryFallback)
