@@ -52,7 +52,7 @@ jobs:
       run: mvn -B -Dquickly
 
     - name: Test chicory-redline
-      run: mvn -B install -P panama,jffi,ci
+      run: mvn -B install -P panama,panama-tests,jffi,ci
 
     - name: Publish Test Report
       uses: mikepenz/action-junit-report@v6

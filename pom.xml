@@ -320,9 +320,6 @@
     </profile>
     <profile>
       <id>panama-tests</id>
-      <activation>
-        <jdk>[25,)</jdk>
-      </activation>
       <modules>
         <module>runner-tests</module>
       </modules>

@@ -69,14 +69,14 @@ Users pick one dependency -- the SPI discovers it automatically:
 | Profile | Modules | Activation |
 |---|---|---|
 | `panama` | `runner` | Auto on JDK 25+ |
-| `panama-tests` | `runner-tests` | Auto on JDK 25+ |
+| `panama-tests` | `runner-tests` | Manual (`-P panama-tests`) |
 | `jffi` | `redline`, `runner-jffi` | Manual (`-P jffi`) |
 | `ci` | `runner-jffi-tests`, `integration-tests`, `jmh` | Manual (`-P ci`) |
 | `release` | GPG signing, javadoc, source jars, Maven Central deploy | Manual (`-P release`) |
 
 Base modules (api, bridge, compiler, build-time-compiler, compiler-maven-plugin) always build regardless of profiles.
 
-Test modules are kept out of the release reactor. `runner-tests` auto-activates on JDK 25+ (same as `panama`). `runner-jffi-tests` lives in the `ci` profile. Activate `-P ci` to run the jffi spec tests locally.
+Test modules are kept out of the release reactor to avoid issues with `central-publishing-maven-plugin` (which ignores `maven.deploy.skip`). Both `runner-tests` and `runner-jffi-tests` require manual profile activation. Activate `-P panama-tests` or `-P ci` to run the respective spec tests locally.
 
 ### Key packages
 
@@ -98,7 +98,7 @@ Test modules are kept out of the release reactor. `runner-tests` auto-activates 
 ### Full build
 
 ```bash
-mvn clean install -P panama,jffi,ci
+mvn clean install -P panama,panama-tests,jffi,ci
 ```
 
 This runs checkstyle, spotless, compilation, and ~28k spec tests on both runners.
