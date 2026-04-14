@@ -6,3 +6,6 @@ core.*
 
 /testsuite
 dependency-reduced-pom.xml
+
+# Checked out by CI workflows
+/chicory
