@@ -35,18 +35,15 @@ Other projects integrate Wasmtime (or similar runtimes) via JNI bindings to a pl
 
 On any other platform the bytecode fallback (when enabled) takes over automatically.
 
-## Safety
+## Safety and Performance
 
-Chicory Redline is the performance-oriented companion to [Chicory](https://github.com/dylibso/chicory). It is designed for situations where JVM bytecode throughput is not enough and a fully sandboxed, self-contained environment is not the top priority.
+Chicory Redline combines the security guarantees of WebAssembly with the raw speed of native machine code, powered by [Cranelift](https://cranelift.dev/), the same production-grade compiler backend trusted by [Wasmtime](https://wasmtime.dev/).
 
-Cranelift generates bounds-checked assembly for every linear memory access, and all off-heap memory (linear memory, globals, code regions) is allocated through Java-managed structures (Panama `Arena` / jffi `MemoryIO`). Code pages are mapped read-execute only -- they cannot be modified after compilation.
+- **Bounds-checked memory access** -- Cranelift generates bounds-checked assembly for every linear memory access, enforcing WebAssembly's sandboxing model at native speed.
+- **Java-managed off-heap memory** -- All off-heap memory (linear memory, globals, code regions) is allocated through Java-managed structures (Panama `Arena` / jffi `MemoryIO`), ensuring proper lifecycle management.
+- **Read-execute only code pages** -- Compiled code pages are mapped read-execute only and cannot be modified after compilation.
 
-That said, the compiled code runs **outside the JVM**. This means you give up some runtime safety guarantees that the JVM normally provides:
-
-- A bug in the Cranelift compiler could produce incorrect machine code that crashes the JVM process (SIGSEGV) rather than throwing a Java exception.
-- There is no OS-level sandbox around the generated code -- safety relies entirely on the correctness of Cranelift's bounds checks and code generation.
-
-If your use case requires a fully secure and self-contained execution environment, use Chicory's pure-Java bytecode compiler instead. Redline is for when you need the maximum performance of a native compiler and accept the trade-off.
+The result is maximum throughput with the safety properties of WebAssembly's separate heap memory model, performance that we have proven, JVM bytecode alone cannot match.
 
 ## Installation
 
