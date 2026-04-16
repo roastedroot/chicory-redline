@@ -353,7 +353,7 @@ public final class JffiNativeMachine implements Machine {
                 MEM.freeMemory(lazyTableState.tablePtrsArrayAddr);
             }
             // Free table buffers — only those we created (wrapped imports),
-            // not factory-created tables which the Instance may still reference
+            // not factory-created tables which the factory frees
             if (lazyTableState.nativeTables != null) {
                 for (int i = 0; i < lazyTableState.nativeTables.length; i++) {
                     JffiNativeTable table = lazyTableState.nativeTables[i];

@@ -30,6 +30,7 @@ public final class JffiNativeTable extends TableInstance {
 
     private final long bufferAddress;
     private final int capacity;
+    private boolean freed;
 
     public JffiNativeTable(Table table) {
         super(table, REF_NULL_VALUE);
@@ -97,9 +98,10 @@ public final class JffiNativeTable extends TableInstance {
         return bufferAddress;
     }
 
-    /** Free the off-heap buffer. */
-    void free() {
-        if (bufferAddress != 0) {
+    /** Free the off-heap buffer. Idempotent — safe to call multiple times. */
+    public void free() {
+        if (!freed && bufferAddress != 0) {
+            freed = true;
             MEM.freeMemory(bufferAddress);
         }
     }

@@ -101,7 +101,6 @@ public final class JffiNativeMachineFactory implements AutoCloseable {
                                                                 .ExternalType.GLOBAL)
                                 .count();
         this.globalIndex = importGlobalCount;
-        this.nativeTables.clear();
         this.nativeMachine =
                 new JffiNativeMachine(
                         instance,
@@ -117,6 +116,10 @@ public final class JffiNativeMachineFactory implements AutoCloseable {
         if (nativeMachine != null) {
             nativeMachine.close();
         }
+        for (JffiNativeTable table : nativeTables) {
+            table.free();
+        }
+        nativeTables.clear();
         if (globalsBufferAddr != 0) {
             MEM.freeMemory(globalsBufferAddr);
             globalsBufferAddr = 0;
