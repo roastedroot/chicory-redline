@@ -1,7 +1,9 @@
 package io.roastedroot.redline.compiler.internal;
 
 import com.dylibso.chicory.wasm.types.AnnotatedInstruction;
+import com.dylibso.chicory.wasm.types.ExternalType;
 import com.dylibso.chicory.wasm.types.FunctionType;
+import com.dylibso.chicory.wasm.types.TableImport;
 import com.dylibso.chicory.wasm.types.ValType;
 import io.roastedroot.redline.api.internal.CtxBuffer;
 
@@ -918,6 +920,25 @@ final class NativeEmitters {
         return b.emitLoadI64(tablePtrsPtr, offset, 0);
     }
 
+    private static boolean isExternRefTable(EmitContext ctx, int tableIdx) {
+        int importTableCount = 0;
+        for (var imp :
+                ctx.module.importSection().stream().collect(java.util.stream.Collectors.toList())) {
+            if (imp.importType() == ExternalType.TABLE) {
+                if (importTableCount == tableIdx) {
+                    return ((TableImport) imp).entryType().equals(ValType.ExternRef);
+                }
+                importTableCount++;
+            }
+        }
+        int definedIdx = tableIdx - importTableCount;
+        return ctx.module
+                .tableSection()
+                .getTable(definedIdx)
+                .elementType()
+                .equals(ValType.ExternRef);
+    }
+
     static void emitTableGet(EmitContext ctx, AnnotatedInstruction ins) {
         int tableIdx = (int) ins.operands()[0];
         int index = ctx.valueStack.pop();
@@ -987,20 +1008,27 @@ final class NativeEmitters {
         b.emitStoreI64(tablePtr, entryOffset, b.emitIconst64(0, 0), entryFuncPtrOff);
         b.emitJump(mergeBlock);
 
-        // Non-null path: resolve funcId → funcPtr+typeIdx
+        // Non-null path
         b.switchToBlock(nonNullBlock);
-        // Load funcPtr from funcTable[funcId * 8]
-        int funcTablePtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.FUNC_TABLE_PTR);
-        int funcPtrOffset = b.emitImul(funcId, b.emitIconst32(8));
-        int funcPtr = b.emitLoadI64(funcTablePtr, funcPtrOffset, 0);
-        // Load typeIdx from funcTypesArray[funcId * 4]
-        int funcTypesPtr = b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.FUNC_TYPES_PTR);
-        int typeIdxOffset = b.emitImul(funcId, b.emitIconst32(4));
-        int typeIdx = b.emitLoadI32(funcTypesPtr, typeIdxOffset, 0);
-        // Write full 16-byte entry
-        b.emitStoreI32(tablePtr, entryOffset, typeIdx, entryTypeOff);
-        b.emitStoreI32(tablePtr, entryOffset, funcId, entryFuncIdOff);
-        b.emitStoreI64(tablePtr, entryOffset, funcPtr, entryFuncPtrOff);
+        if (isExternRefTable(ctx, tableIdx)) {
+            // ExternRef: store raw value directly, no function lookup
+            b.emitStoreI32(tablePtr, entryOffset, b.emitIconst32(0), entryTypeOff);
+            b.emitStoreI32(tablePtr, entryOffset, funcId, entryFuncIdOff);
+            b.emitStoreI64(tablePtr, entryOffset, b.emitIconst64(0, 0), entryFuncPtrOff);
+        } else {
+            // FuncRef: resolve funcId → funcPtr+typeIdx
+            int funcTablePtr =
+                    b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.FUNC_TABLE_PTR);
+            int funcPtrOffset = b.emitImul(funcId, b.emitIconst32(8));
+            int funcPtr = b.emitLoadI64(funcTablePtr, funcPtrOffset, 0);
+            int funcTypesPtr =
+                    b.emitLoadI64(b.useVar(ctx.ctxPtrVar), zero, CtxBuffer.FUNC_TYPES_PTR);
+            int typeIdxOffset = b.emitImul(funcId, b.emitIconst32(4));
+            int typeIdx = b.emitLoadI32(funcTypesPtr, typeIdxOffset, 0);
+            b.emitStoreI32(tablePtr, entryOffset, typeIdx, entryTypeOff);
+            b.emitStoreI32(tablePtr, entryOffset, funcId, entryFuncIdOff);
+            b.emitStoreI64(tablePtr, entryOffset, funcPtr, entryFuncPtrOff);
+        }
         b.emitJump(mergeBlock);
 
         b.switchToBlock(mergeBlock);
