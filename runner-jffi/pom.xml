@@ -27,6 +27,7 @@
       <groupId>com.github.jnr</groupId>
       <artifactId>jffi</artifactId>
       <version>${jffi.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>io.roastedroot</groupId>
@@ -38,7 +39,7 @@
       <artifactId>jffi</artifactId>
       <version>${jffi.version}</version>
       <classifier>native</classifier>
-      <scope>runtime</scope>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
 
