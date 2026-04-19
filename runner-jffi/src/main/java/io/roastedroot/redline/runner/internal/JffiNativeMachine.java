@@ -563,8 +563,9 @@ public final class JffiNativeMachine implements Machine {
                     int fillValue = (int) MEM.getLong(argsBufferAddr + CtxBuffer.argOffset(2));
                     long tableAddr = MEM.getLong(argsBufferAddr + CtxBuffer.argOffset(3));
                     int tblIdx = (int) MEM.getLong(argsBufferAddr + CtxBuffer.argOffset(4));
+                    boolean externRef = nativeTables[tblIdx].isExternRef();
                     for (int i = oldSize; i < newSize; i++) {
-                        writeTableEntry(tableAddr, i, fillValue);
+                        writeTableEntry(tableAddr, i, fillValue, externRef);
                     }
                     nativeTables[tblIdx].limits().grow(newSize - oldSize);
                     break;
@@ -575,8 +576,10 @@ public final class JffiNativeMachine implements Machine {
                     int end = (int) MEM.getLong(argsBufferAddr + CtxBuffer.argOffset(1));
                     int fillValue = (int) MEM.getLong(argsBufferAddr + CtxBuffer.argOffset(2));
                     long tableAddr = MEM.getLong(argsBufferAddr + CtxBuffer.argOffset(3));
+                    int tblIdx = (int) MEM.getLong(argsBufferAddr + CtxBuffer.argOffset(4));
+                    boolean externRef = nativeTables[tblIdx].isExternRef();
                     for (int i = offset; i < end; i++) {
-                        writeTableEntry(tableAddr, i, fillValue);
+                        writeTableEntry(tableAddr, i, fillValue, externRef);
                     }
                     break;
                 }
@@ -659,7 +662,7 @@ public final class JffiNativeMachine implements Machine {
         return 0L;
     }
 
-    private void writeTableEntry(long tableAddr, int index, int funcId) {
+    private void writeTableEntry(long tableAddr, int index, int funcId, boolean isExternRef) {
         long base =
                 tableAddr
                         + CtxBuffer.TABLE_ENTRIES_OFFSET
@@ -668,19 +671,16 @@ public final class JffiNativeMachine implements Machine {
             MEM.putInt(base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, 0);
             MEM.putInt(base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, Value.REF_NULL_VALUE);
             MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, 0L);
+        } else if (isExternRef) {
+            MEM.putInt(base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, 0);
+            MEM.putInt(base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
+            MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, 0L);
         } else {
-            int totalFuncs = (int) (funcTableSize / 8);
-            if (funcId >= 0 && funcId < totalFuncs) {
-                long funcPtr = MEM.getLong(funcTableAddr + (long) funcId * 8);
-                int typeIdx = MEM.getInt(funcTypesArrayAddr + (long) funcId * 4);
-                MEM.putInt(base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, typeIdx);
-                MEM.putInt(base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
-                MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, funcPtr);
-            } else {
-                MEM.putInt(base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, 0);
-                MEM.putInt(base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
-                MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, 0L);
-            }
+            long funcPtr = MEM.getLong(funcTableAddr + (long) funcId * 8);
+            int typeIdx = MEM.getInt(funcTypesArrayAddr + (long) funcId * 4);
+            MEM.putInt(base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, typeIdx);
+            MEM.putInt(base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
+            MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, funcPtr);
         }
     }
 

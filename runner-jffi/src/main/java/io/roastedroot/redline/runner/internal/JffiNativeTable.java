@@ -30,10 +30,12 @@ public final class JffiNativeTable extends TableInstance {
 
     private final long bufferAddress;
     private final int capacity;
+    private final boolean isExternRef;
     private boolean freed;
 
     public JffiNativeTable(Table table) {
         super(table, REF_NULL_VALUE);
+        this.isExternRef = table.elementType().equals(ValType.ExternRef);
         int initial = (int) table.limits().min();
         int max = (int) table.limits().max();
         this.capacity = (max > 0 && max <= MAX_PREALLOC) ? max : Math.max(initial, MAX_PREALLOC);
@@ -62,24 +64,27 @@ public final class JffiNativeTable extends TableInstance {
         MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, 0L);
     }
 
+    private void writeOpaqueEntry(int index, int value) {
+        long base = bufferAddress + entryBase(index);
+        MEM.putInt(base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, 0);
+        MEM.putInt(base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, value);
+        MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, 0L);
+    }
+
     private void writeResolvedEntry(int index, int funcId, long ftAddr, long ftSize, long ftaAddr) {
         long base = bufferAddress + entryBase(index);
-        int totalFuncs = (int) (ftSize / 8);
-        if (funcId >= 0 && funcId < totalFuncs) {
-            long funcPtr = MEM.getLong(ftAddr + (long) funcId * 8);
-            int typeIdx = MEM.getInt(ftaAddr + (long) funcId * 4);
-            MEM.putInt(base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, typeIdx);
-            MEM.putInt(base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
-            MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, funcPtr);
-        } else {
-            // Externref: store opaque ref value, not callable
-            MEM.putInt(base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, 0);
-            MEM.putInt(base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
-            MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, 0L);
-        }
+        long funcPtr = MEM.getLong(ftAddr + (long) funcId * 8);
+        int typeIdx = MEM.getInt(ftaAddr + (long) funcId * 4);
+        MEM.putInt(base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, typeIdx);
+        MEM.putInt(base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
+        MEM.putLong(base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, funcPtr);
     }
 
     private boolean resolveFromInstance(int index, int funcId, Instance instance) {
+        if (isExternRef) {
+            writeOpaqueEntry(index, funcId);
+            return true;
+        }
         if (instance != null && instance.getMachine() instanceof JffiNativeMachine) {
             JffiNativeMachine nm = (JffiNativeMachine) instance.getMachine();
             writeResolvedEntry(
@@ -96,6 +101,10 @@ public final class JffiNativeTable extends TableInstance {
     /** Get the native address of the table buffer, for passing to native code. */
     long nativeBufferAddress() {
         return bufferAddress;
+    }
+
+    boolean isExternRef() {
+        return isExternRef;
     }
 
     /** Free the off-heap buffer. Idempotent — safe to call multiple times. */
