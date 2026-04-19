@@ -42,9 +42,11 @@ public final class NativeTable extends TableInstance {
 
     private final MemorySegment buffer;
     private final int capacity;
+    private final boolean isExternRef;
 
     public NativeTable(Table table, Arena arena) {
         super(table, REF_NULL_VALUE);
+        this.isExternRef = table.elementType().equals(ValType.ExternRef);
         int initial = (int) table.limits().min();
         int max = (int) table.limits().max();
         // Pre-allocate to max, capped at MAX_PREALLOC
@@ -74,29 +76,32 @@ public final class NativeTable extends TableInstance {
         buffer.set(ValueLayout.JAVA_LONG, base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, 0L);
     }
 
+    private void writeOpaqueEntry(int index, int value) {
+        long base = entryBase(index);
+        buffer.set(ValueLayout.JAVA_INT, base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, 0);
+        buffer.set(ValueLayout.JAVA_INT, base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, value);
+        buffer.set(ValueLayout.JAVA_LONG, base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, 0L);
+    }
+
     private void writeResolvedEntry(int index, int funcId, MemorySegment ft, MemorySegment fta) {
         long base = entryBase(index);
-        int totalFuncs = (int) (ft.byteSize() / 8);
-        if (funcId >= 0 && funcId < totalFuncs) {
-            // Funcref: resolve funcId → funcPtr+typeIdx
-            long funcPtr = ft.get(ValueLayout.JAVA_LONG, (long) funcId * 8);
-            int typeIdx = fta.get(ValueLayout.JAVA_INT, (long) funcId * 4);
-            buffer.set(ValueLayout.JAVA_INT, base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, typeIdx);
-            buffer.set(ValueLayout.JAVA_INT, base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
-            buffer.set(ValueLayout.JAVA_LONG, base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, funcPtr);
-        } else {
-            // Externref: store opaque ref value, not callable
-            buffer.set(ValueLayout.JAVA_INT, base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, 0);
-            buffer.set(ValueLayout.JAVA_INT, base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
-            buffer.set(ValueLayout.JAVA_LONG, base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, 0L);
-        }
+        long funcPtr = ft.get(ValueLayout.JAVA_LONG, (long) funcId * 8);
+        int typeIdx = fta.get(ValueLayout.JAVA_INT, (long) funcId * 4);
+        buffer.set(ValueLayout.JAVA_INT, base + CtxBuffer.ENTRY_TYPE_IDX_OFFSET, typeIdx);
+        buffer.set(ValueLayout.JAVA_INT, base + CtxBuffer.ENTRY_FUNC_ID_OFFSET, funcId);
+        buffer.set(ValueLayout.JAVA_LONG, base + CtxBuffer.ENTRY_FUNC_PTR_OFFSET, funcPtr);
     }
 
     /**
      * Try to resolve funcId → funcPtr+typeIdx using the instance's NativeMachine.
+     * For externref tables, stores the value as-is without function resolution.
      * Returns true if resolved, false if not (instance is null or not NativeMachine).
      */
     private boolean resolveFromInstance(int index, int funcId, Instance instance) {
+        if (isExternRef) {
+            writeOpaqueEntry(index, funcId);
+            return true;
+        }
         if (instance != null && instance.getMachine() instanceof NativeMachine nm) {
             writeResolvedEntry(index, funcId, nm.getFuncTable(), nm.getFuncTypesArray());
             return true;
@@ -107,6 +112,10 @@ public final class NativeTable extends TableInstance {
     /** Get the native address of the table buffer, for passing to native code. */
     MemorySegment nativeBuffer() {
         return buffer;
+    }
+
+    boolean isExternRef() {
+        return isExternRef;
     }
 
     @Override
