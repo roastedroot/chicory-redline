@@ -116,6 +116,22 @@ mvn clean install -P panama,panama-tests,jffi,ci
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full build guide, architecture overview, and code style guidelines.
 
+## Roadmap
+
+Redline aims to support every Wasm proposal that [Chicory](https://github.com/dylibso/chicory) supports. The table below tracks current progress -- checked items pass the upstream spec tests, unchecked items are not yet implemented.
+
+- [x] Wasm MVP (core spec)
+- [x] Bulk Memory Operations
+- [x] Reference Types
+- [x] Threads (atomics, shared memory, wait/notify)
+- [ ] SIMD (v128 operations)
+- [ ] Exception Handling (try/throw/tags)
+- [ ] Tail Call (return_call, return_call_indirect)
+- [ ] Function References (call_ref, typed function references)
+- [ ] GC / WasmGC (structs, arrays, i31ref)
+- [ ] Multi-Memory
+- [ ] Extended Constant Expressions
+
 ## Acknowledgements
 
 Chicory Redline builds on the shoulders of two great projects:
