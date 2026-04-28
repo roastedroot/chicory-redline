@@ -1155,6 +1155,14 @@ public final class NativeCompiler {
             case CALL_INDIRECT:
                 NativeEmitters.emitCallIndirect(ctx, ins);
                 break;
+            case RETURN_CALL:
+                NativeEmitters.emitReturnCall(ctx, ins);
+                controlStack.peek().unreachable = true;
+                break;
+            case RETURN_CALL_INDIRECT:
+                NativeEmitters.emitReturnCallIndirect(ctx, ins);
+                controlStack.peek().unreachable = true;
+                break;
 
             // --- Control flow (stays in orchestrator) ---
             case BLOCK:

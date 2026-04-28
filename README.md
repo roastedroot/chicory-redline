@@ -126,7 +126,7 @@ Redline aims to support every Wasm proposal that [Chicory](https://github.com/dy
 - [x] Threads (atomics, shared memory, wait/notify)
 - [ ] SIMD (v128 operations)
 - [ ] Exception Handling (try/throw/tags)
-- [ ] Tail Call (return_call, return_call_indirect)
+- [x] Tail Call (return_call, return_call_indirect)
 - [ ] Function References (call_ref, typed function references)
 - [ ] GC / WasmGC (structs, arrays, i31ref)
 - [ ] Multi-Memory

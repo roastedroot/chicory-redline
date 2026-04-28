@@ -7,7 +7,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{AbiParam, AtomicRmwOp, BlockArg, BlockCall, Function, InstBuilder, MemFlags, Signature, UserFuncName};
-use cranelift_codegen::isa::{self, TargetIsa};
+use cranelift_codegen::isa::{self, CallConv, TargetIsa};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_codegen::Context;
 use cranelift_control::ControlPlane;
@@ -96,6 +96,7 @@ pub extern "C" fn init(target_ptr: *const u8, target_len: u32) {
     let mut flag_builder = settings::builder();
     flag_builder.set("opt_level", "speed").unwrap();
     flag_builder.set("is_pic", "false").unwrap();
+    flag_builder.set("preserve_frame_pointers", "true").unwrap();
     let flags = settings::Flags::new(flag_builder);
     let triple: Triple = target_str.parse().expect("Failed to parse target triple");
     let arch = triple.architecture;
@@ -117,10 +118,9 @@ pub extern "C" fn init(target_ptr: *const u8, target_len: u32) {
 /// BEFORE build_function.
 #[no_mangle]
 pub extern "C" fn create_function() {
-    let call_conv = unsafe { ISA.as_ref().expect("ISA not initialized").default_call_conv() };
     let func = Box::new(Function::with_name_signature(
         UserFuncName::user(0, 0),
-        Signature::new(call_conv),
+        Signature::new(CallConv::Tail),
     ));
     let builder_ctx = Box::new(FunctionBuilderContext::new());
 
@@ -1626,8 +1626,7 @@ pub extern "C" fn emit_ireduce_i32(a: u32) -> u32 {
 /// Start building a new signature. Call sig_add_param/sig_add_return, then end_sig.
 #[no_mangle]
 pub extern "C" fn begin_sig() {
-    let call_conv = unsafe { ISA.as_ref().expect("ISA not initialized").default_call_conv() };
-    s().sig_builder = Some(Signature::new(call_conv));
+    s().sig_builder = Some(Signature::new(CallConv::Tail));
 }
 
 /// Add a parameter type to the current signature being built.
@@ -1681,6 +1680,16 @@ pub extern "C" fn emit_call_indirect(sig_ref_id: u32, callee: u32) -> u32 {
     let id = session.values.len() as u32;
     session.values.push(result);
     id
+}
+
+/// Emit return_call_indirect (tail call) with accumulated args.
+/// This is a terminator — the callee returns directly to our caller.
+#[no_mangle]
+pub extern "C" fn emit_return_call_indirect(sig_ref_id: u32, callee: u32) {
+    let sig_ref = s().sig_refs[sig_ref_id as usize];
+    let vcallee = s().values[callee as usize];
+    let args: Vec<cranelift_codegen::ir::Value> = s().call_args.drain(..).collect();
+    b().ins().return_call_indirect(sig_ref, vcallee, &args);
 }
 
 // --- Return ---
