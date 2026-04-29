@@ -111,6 +111,18 @@ public final class JffiNativeMachineFactory implements AutoCloseable {
         return nativeMachine;
     }
 
+    public void requestInterrupt() {
+        if (nativeMachine != null) {
+            nativeMachine.requestInterrupt();
+        }
+    }
+
+    public void clearInterrupt() {
+        if (nativeMachine != null) {
+            nativeMachine.clearInterrupt();
+        }
+    }
+
     @Override
     public void close() {
         if (nativeMachine != null) {
@@ -192,7 +204,11 @@ public final class JffiNativeMachineFactory implements AutoCloseable {
             if (memoryLimits != null) {
                 instanceBuilder.withMemoryLimits(memoryLimits);
             }
-            return new RedlineInstance(instanceBuilder.build(), factory);
+            return new RedlineInstance(
+                    instanceBuilder.build(),
+                    factory,
+                    factory::requestInterrupt,
+                    factory::clearInterrupt);
         }
     }
 }

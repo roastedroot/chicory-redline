@@ -857,6 +857,9 @@ public final class JffiNativeMachine implements Machine {
         if (trapCode == CtxBuffer.TRAP_UNALIGNED_ATOMIC) {
             return new ChicoryException("unaligned atomic");
         }
+        if (trapCode == CtxBuffer.TRAP_INTERRUPTED) {
+            return new ChicoryException("interrupted");
+        }
         return new ChicoryException("trap: unknown code " + trapCode);
     }
 
@@ -971,6 +974,10 @@ public final class JffiNativeMachine implements Machine {
                 MEM.putInt(ctxBufferAddr + CtxBuffer.MEMORY_PAGES, mem.pages());
             }
 
+            if (Thread.interrupted()) {
+                throw new ChicoryException("interrupted");
+            }
+
             long result =
                     invokeNative(callCtx, funcAddr, funcType, cachedMemBase, ctxBufferAddr, args);
 
@@ -989,6 +996,10 @@ public final class JffiNativeMachine implements Machine {
             int trapCode = MEM.getInt(ctxBufferAddr + CtxBuffer.TRAP_CODE);
             if (trapCode != 0) {
                 MEM.putInt(ctxBufferAddr + CtxBuffer.TRAP_CODE, 0);
+                if (trapCode == CtxBuffer.TRAP_INTERRUPTED) {
+                    MEM.putLong(ctxBufferAddr + CtxBuffer.INTERRUPT_FLAG, 0L);
+                    Thread.currentThread().interrupt();
+                }
                 throw trapException(trapCode);
             }
 
@@ -1018,6 +1029,14 @@ public final class JffiNativeMachine implements Machine {
             // (ctxBuffer, funcTypesArray, code region) while code is executing.
             Reference.reachabilityFence(this);
         }
+    }
+
+    public void requestInterrupt() {
+        MEM.putLong(ctxBufferAddr + CtxBuffer.INTERRUPT_FLAG, 1L);
+    }
+
+    public void clearInterrupt() {
+        MEM.putLong(ctxBufferAddr + CtxBuffer.INTERRUPT_FLAG, 0L);
     }
 
     private static long narrowReturnValue(long raw, ValType type) {

@@ -828,6 +828,7 @@ public final class NativeMachine implements Machine {
             case CtxBuffer.TRAP_INDIRECT_CALL_TYPE_MISMATCH ->
                     new ChicoryException("indirect call type mismatch");
             case CtxBuffer.TRAP_UNALIGNED_ATOMIC -> new ChicoryException("unaligned atomic");
+            case CtxBuffer.TRAP_INTERRUPTED -> new ChicoryException("interrupted");
             default -> new ChicoryException("trap: unknown code " + trapCode);
         };
     }
@@ -919,6 +920,10 @@ public final class NativeMachine implements Machine {
                 ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.MEMORY_PAGES, mem.pages());
             }
 
+            if (Thread.interrupted()) {
+                throw new ChicoryException("interrupted");
+            }
+
             long result = (long) handle.invokeExact(cachedMemBase, ctxBuffer, args);
 
             // Check for exceptions from upcall stubs first — a host function
@@ -936,6 +941,10 @@ public final class NativeMachine implements Machine {
             int trapCode = ctxBuffer.get(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE);
             if (trapCode != 0) {
                 ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE, 0);
+                if (trapCode == CtxBuffer.TRAP_INTERRUPTED) {
+                    ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.INTERRUPT_FLAG, 0L);
+                    Thread.currentThread().interrupt();
+                }
                 throw trapException(trapCode);
             }
 
@@ -965,6 +974,14 @@ public final class NativeMachine implements Machine {
             // (ctxBuffer, funcTypesArray, code region) while code is executing.
             Reference.reachabilityFence(this);
         }
+    }
+
+    public void requestInterrupt() {
+        ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.INTERRUPT_FLAG, 1L);
+    }
+
+    public void clearInterrupt() {
+        ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.INTERRUPT_FLAG, 0L);
     }
 
     private static long narrowReturnValue(long raw, ValType type) {

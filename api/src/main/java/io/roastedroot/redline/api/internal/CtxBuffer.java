@@ -41,6 +41,7 @@ package io.roastedroot.redline.api.internal;
  *  48     i64    stackLimit        Stack pointer limit for call depth guard
  *  56     i64    memmovePtr        Pointer to libc memmove
  *  64     i64    memsetPtr         Pointer to libc memset
+ *  72     i64    interruptFlag     Non-zero = interrupt requested (TRAP_INTERRUPTED)
  * 200     i64    globalsPtr        Pointer to globals buffer
  * 208     i64    memGrowPtr        Upcall stub for memory.grow
  * 216     i32    memoryPages       Current memory page count
@@ -113,6 +114,9 @@ public final class CtxBuffer {
     /** Pointer to libc memset function (i64). */
     public static final int MEMSET_PTR = 64;
 
+    /** Non-zero when interruption has been requested (i64). */
+    public static final int INTERRUPT_FLAG = 72;
+
     // --- Memory and globals ---
 
     /** Pointer to the off-heap globals buffer. */
@@ -148,6 +152,7 @@ public final class CtxBuffer {
     public static final int TRAP_UNINITIALIZED_ELEMENT = 10;
     public static final int TRAP_TRUNC_NAN = 11;
     public static final int TRAP_UNALIGNED_ATOMIC = 12;
+    public static final int TRAP_INTERRUPTED = 13;
 
     // --- NativeTable buffer layout ---
     // Each table buffer: [size:i32 @ 0][max:i32 @ 4][entries... @ 8]
