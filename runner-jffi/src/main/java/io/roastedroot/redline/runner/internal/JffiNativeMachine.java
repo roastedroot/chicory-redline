@@ -309,6 +309,40 @@ public final class JffiNativeMachine implements Machine {
                                     bridge, importTypes[funcId], importStubAddrs[funcId]);
                 }
 
+                // Compile import trampolines for internal stubs (also called from Tail code)
+                byte[] trampolineStubTrampCode =
+                        compileStubTrampoline(
+                                bridge,
+                                trampolineHandle.getAddress(),
+                                new int[] {RedlineBridge.TYPE_I64},
+                                new int[] {RedlineBridge.TYPE_I64});
+                byte[] memGrowStubTrampCode =
+                        compileStubTrampoline(
+                                bridge,
+                                memGrowHandle.getAddress(),
+                                new int[] {RedlineBridge.TYPE_I64},
+                                new int[] {RedlineBridge.TYPE_I64});
+                byte[] memmoveTrampCode =
+                        compileStubTrampoline(
+                                bridge,
+                                MEMMOVE_ADDR,
+                                new int[] {
+                                    RedlineBridge.TYPE_I64,
+                                    RedlineBridge.TYPE_I64,
+                                    RedlineBridge.TYPE_I64
+                                },
+                                new int[] {RedlineBridge.TYPE_I64});
+                byte[] memsetTrampCode =
+                        compileStubTrampoline(
+                                bridge,
+                                MEMSET_ADDR,
+                                new int[] {
+                                    RedlineBridge.TYPE_I64,
+                                    RedlineBridge.TYPE_I64,
+                                    RedlineBridge.TYPE_I64
+                                },
+                                new int[] {RedlineBridge.TYPE_I64});
+
                 // Calculate total trampoline code size
                 long trampTotalSize = 0;
                 for (byte[] code : entryTrampolineCode.values()) {
@@ -317,6 +351,10 @@ public final class JffiNativeMachine implements Machine {
                 for (byte[] code : importTrampolineCode) {
                     trampTotalSize += align(code.length, 16);
                 }
+                trampTotalSize += align(trampolineStubTrampCode.length, 16);
+                trampTotalSize += align(memGrowStubTrampCode.length, 16);
+                trampTotalSize += align(memmoveTrampCode.length, 16);
+                trampTotalSize += align(memsetTrampCode.length, 16);
                 trampTotalSize = Math.max(trampTotalSize, 4096);
                 trampTotalSize = align(trampTotalSize, 4096);
 
@@ -353,6 +391,36 @@ public final class JffiNativeMachine implements Machine {
                     MEM.putLong(funcTableAddr + (long) funcId * 8, trampAddr);
                     trampOffset += align(code.length, 16);
                 }
+
+                // Copy internal stub trampolines and update ctxBuffer
+                trampOffset =
+                        copyStubTrampoline(
+                                trampolineStubTrampCode,
+                                trampolineRegionAddr,
+                                trampOffset,
+                                ctxBufferAddr,
+                                CtxBuffer.TRAMPOLINE_PTR);
+                trampOffset =
+                        copyStubTrampoline(
+                                memGrowStubTrampCode,
+                                trampolineRegionAddr,
+                                trampOffset,
+                                ctxBufferAddr,
+                                CtxBuffer.MEM_GROW_PTR);
+                trampOffset =
+                        copyStubTrampoline(
+                                memmoveTrampCode,
+                                trampolineRegionAddr,
+                                trampOffset,
+                                ctxBufferAddr,
+                                CtxBuffer.MEMMOVE_PTR);
+                trampOffset =
+                        copyStubTrampoline(
+                                memsetTrampCode,
+                                trampolineRegionAddr,
+                                trampOffset,
+                                ctxBufferAddr,
+                                CtxBuffer.MEMSET_PTR);
 
                 PM.protectPages(
                         trampolineRegionAddr,
@@ -1206,6 +1274,25 @@ public final class JffiNativeMachine implements Machine {
             RedlineBridge bridge, FunctionType funcType, long stubAddr) {
         buildTrampolineSig(bridge, funcType);
         return bridge.compileImportTrampoline(stubAddr);
+    }
+
+    private static byte[] compileStubTrampoline(
+            RedlineBridge bridge, long stubAddr, int[] paramTypes, int[] returnTypes) {
+        bridge.beginTrampolineSig();
+        for (int p : paramTypes) {
+            bridge.trampolineSigAddParam(p);
+        }
+        for (int r : returnTypes) {
+            bridge.trampolineSigAddReturn(r);
+        }
+        return bridge.compileImportTrampoline(stubAddr);
+    }
+
+    private static long copyStubTrampoline(
+            byte[] code, long regionAddr, long offset, long ctxAddr, long ctxOffset) {
+        MEM.putByteArray(regionAddr + offset, code, 0, code.length);
+        MEM.putLong(ctxAddr + ctxOffset, regionAddr + offset);
+        return offset + align(code.length, 16);
     }
 
     // --- Main dispatch ---

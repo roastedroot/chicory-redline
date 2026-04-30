@@ -280,6 +280,40 @@ public final class NativeMachine implements Machine {
                                     bridge, importTypes[funcId], importStubs[funcId].address());
                 }
 
+                // Compile import trampolines for internal stubs (also called from Tail code)
+                byte[] trampolineStubTrampCode =
+                        compileStubTrampoline(
+                                bridge,
+                                trampolineStub.address(),
+                                new int[] {RedlineBridge.TYPE_I64},
+                                new int[] {RedlineBridge.TYPE_I64});
+                byte[] memGrowStubTrampCode =
+                        compileStubTrampoline(
+                                bridge,
+                                memGrowStub.address(),
+                                new int[] {RedlineBridge.TYPE_I64},
+                                new int[] {RedlineBridge.TYPE_I64});
+                byte[] memmoveTrampCode =
+                        compileStubTrampoline(
+                                bridge,
+                                PanamaExecutor.MEMMOVE_ADDR,
+                                new int[] {
+                                    RedlineBridge.TYPE_I64,
+                                    RedlineBridge.TYPE_I64,
+                                    RedlineBridge.TYPE_I64
+                                },
+                                new int[] {RedlineBridge.TYPE_I64});
+                byte[] memsetTrampCode =
+                        compileStubTrampoline(
+                                bridge,
+                                PanamaExecutor.MEMSET_ADDR,
+                                new int[] {
+                                    RedlineBridge.TYPE_I64,
+                                    RedlineBridge.TYPE_I64,
+                                    RedlineBridge.TYPE_I64
+                                },
+                                new int[] {RedlineBridge.TYPE_I64});
+
                 // Calculate total trampoline code size
                 long trampTotalSize = 0;
                 for (byte[] code : entryTrampolineCode.values()) {
@@ -288,6 +322,10 @@ public final class NativeMachine implements Machine {
                 for (byte[] code : importTrampolineCode) {
                     trampTotalSize += align(code.length, 16);
                 }
+                trampTotalSize += align(trampolineStubTrampCode.length, 16);
+                trampTotalSize += align(memGrowStubTrampCode.length, 16);
+                trampTotalSize += align(memmoveTrampCode.length, 16);
+                trampTotalSize += align(memsetTrampCode.length, 16);
                 trampTotalSize = Math.max(trampTotalSize, 4096);
                 trampTotalSize = align(trampTotalSize, 4096);
                 this.trampolineRegionSize = trampTotalSize;
@@ -322,6 +360,36 @@ public final class NativeMachine implements Machine {
                     funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, trampPtr.address());
                     trampOffset += align(code.length, 16);
                 }
+
+                // Copy internal stub trampolines and update ctxBuffer
+                trampOffset =
+                        copyStubTrampoline(
+                                trampolineStubTrampCode,
+                                trampolineRegion,
+                                trampOffset,
+                                ctxBuffer,
+                                CtxBuffer.TRAMPOLINE_PTR);
+                trampOffset =
+                        copyStubTrampoline(
+                                memGrowStubTrampCode,
+                                trampolineRegion,
+                                trampOffset,
+                                ctxBuffer,
+                                CtxBuffer.MEM_GROW_PTR);
+                trampOffset =
+                        copyStubTrampoline(
+                                memmoveTrampCode,
+                                trampolineRegion,
+                                trampOffset,
+                                ctxBuffer,
+                                CtxBuffer.MEMMOVE_PTR);
+                trampOffset =
+                        copyStubTrampoline(
+                                memsetTrampCode,
+                                trampolineRegion,
+                                trampOffset,
+                                ctxBuffer,
+                                CtxBuffer.MEMSET_PTR);
 
                 PanamaExecutor.mprotectExec(trampolineRegion, trampTotalSize);
 
@@ -1039,6 +1107,25 @@ public final class NativeMachine implements Machine {
             RedlineBridge bridge, FunctionType funcType, long stubAddr) {
         buildTrampolineSig(bridge, funcType);
         return bridge.compileImportTrampoline(stubAddr);
+    }
+
+    private static byte[] compileStubTrampoline(
+            RedlineBridge bridge, long stubAddr, int[] paramTypes, int[] returnTypes) {
+        bridge.beginTrampolineSig();
+        for (int p : paramTypes) {
+            bridge.trampolineSigAddParam(p);
+        }
+        for (int r : returnTypes) {
+            bridge.trampolineSigAddReturn(r);
+        }
+        return bridge.compileImportTrampoline(stubAddr);
+    }
+
+    private static long copyStubTrampoline(
+            byte[] code, MemorySegment region, long offset, MemorySegment ctxBuf, long ctxOffset) {
+        MemorySegment.copy(MemorySegment.ofArray(code), 0, region, offset, code.length);
+        ctxBuf.set(ValueLayout.JAVA_LONG, ctxOffset, region.asSlice(offset).address());
+        return offset + align(code.length, 16);
     }
 
     // --- Main dispatch ---
