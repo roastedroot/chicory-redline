@@ -204,11 +204,11 @@ public final class NativeMachine implements Machine {
         long totalSize = 0;
         for (byte[] code : compiledCode) {
             if (code != null) {
-                totalSize += align(code.length, 16);
+                totalSize += RedlineBridge.align(code.length, 16);
             }
         }
         totalSize = Math.max(totalSize, 4096);
-        totalSize = align(totalSize, 4096);
+        totalSize = RedlineBridge.align(totalSize, 4096);
         this.codeRegionSize = totalSize;
 
         try {
@@ -241,7 +241,7 @@ public final class NativeMachine implements Machine {
                     // Store native code address in function pointer table (Tail convention)
                     funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, codePtr.address());
 
-                    offset += align(compiledCode[i].length, 16);
+                    offset += RedlineBridge.align(compiledCode[i].length, 16);
                 }
             }
             PanamaExecutor.mprotectExec(codeRegion, totalSize);
@@ -258,76 +258,25 @@ public final class NativeMachine implements Machine {
             }
 
             // Compile ABI trampolines via Cranelift bridge
+            long[] importStubAddrs = new long[numImports];
+            for (int i = 0; i < numImports; i++) {
+                importStubAddrs[i] = importStubs[i].address();
+            }
             try (var bridge = new RedlineBridge()) {
                 bridge.init(RedlineTarget.detectHost());
-
-                // Compile per-signature entry trampolines (platform ABI → Tail)
-                Map<FunctionType, byte[]> entryTrampolineCode = new HashMap<>();
-                for (int i = 0; i < compiledCode.length; i++) {
-                    if (compiledCode[i] != null
-                            && !entryTrampolineCode.containsKey(funcTypesByBody[i])) {
-                        entryTrampolineCode.put(
-                                funcTypesByBody[i],
-                                compileEntryTrampoline(bridge, funcTypesByBody[i]));
-                    }
-                }
-
-                // Compile per-import import trampolines (Tail → platform ABI)
-                byte[][] importTrampolineCode = new byte[numImports][];
-                for (int funcId = 0; funcId < numImports; funcId++) {
-                    importTrampolineCode[funcId] =
-                            compileImportTrampoline(
-                                    bridge, importTypes[funcId], importStubs[funcId].address());
-                }
-
-                // Compile import trampolines for internal stubs (also called from Tail code)
-                byte[] trampolineStubTrampCode =
-                        compileStubTrampoline(
-                                bridge,
+                var trampolines =
+                        bridge.compileTrampolines(
+                                compiledCode,
+                                funcTypesByBody,
+                                importTypes,
+                                importStubAddrs,
                                 trampolineStub.address(),
-                                new int[] {RedlineBridge.TYPE_I64},
-                                new int[] {RedlineBridge.TYPE_I64});
-                byte[] memGrowStubTrampCode =
-                        compileStubTrampoline(
-                                bridge,
                                 memGrowStub.address(),
-                                new int[] {RedlineBridge.TYPE_I64},
-                                new int[] {RedlineBridge.TYPE_I64});
-                byte[] memmoveTrampCode =
-                        compileStubTrampoline(
-                                bridge,
                                 PanamaExecutor.MEMMOVE_ADDR,
-                                new int[] {
-                                    RedlineBridge.TYPE_I64,
-                                    RedlineBridge.TYPE_I64,
-                                    RedlineBridge.TYPE_I64
-                                },
-                                new int[] {RedlineBridge.TYPE_I64});
-                byte[] memsetTrampCode =
-                        compileStubTrampoline(
-                                bridge,
-                                PanamaExecutor.MEMSET_ADDR,
-                                new int[] {
-                                    RedlineBridge.TYPE_I64,
-                                    RedlineBridge.TYPE_I64,
-                                    RedlineBridge.TYPE_I64
-                                },
-                                new int[] {RedlineBridge.TYPE_I64});
+                                PanamaExecutor.MEMSET_ADDR);
 
-                // Calculate total trampoline code size
-                long trampTotalSize = 0;
-                for (byte[] code : entryTrampolineCode.values()) {
-                    trampTotalSize += align(code.length, 16);
-                }
-                for (byte[] code : importTrampolineCode) {
-                    trampTotalSize += align(code.length, 16);
-                }
-                trampTotalSize += align(trampolineStubTrampCode.length, 16);
-                trampTotalSize += align(memGrowStubTrampCode.length, 16);
-                trampTotalSize += align(memmoveTrampCode.length, 16);
-                trampTotalSize += align(memsetTrampCode.length, 16);
-                trampTotalSize = Math.max(trampTotalSize, 4096);
-                trampTotalSize = align(trampTotalSize, 4096);
+                long trampTotalSize = Math.max(trampolines.totalSize(), 4096);
+                trampTotalSize = RedlineBridge.align(trampTotalSize, 4096);
                 this.trampolineRegionSize = trampTotalSize;
 
                 // Mmap and copy trampoline code
@@ -336,56 +285,48 @@ public final class NativeMachine implements Machine {
 
                 // Copy entry trampolines and record their addresses
                 Map<FunctionType, MemorySegment> entryTrampolinePtrs = new HashMap<>();
-                for (var entry : entryTrampolineCode.entrySet()) {
-                    MemorySegment.copy(
-                            MemorySegment.ofArray(entry.getValue()),
-                            0,
-                            trampolineRegion,
-                            trampOffset,
-                            entry.getValue().length);
-                    entryTrampolinePtrs.put(entry.getKey(), trampolineRegion.asSlice(trampOffset));
-                    trampOffset += align(entry.getValue().length, 16);
+                for (var entry : trampolines.entryTrampolines().entrySet()) {
+                    trampOffset = copyCode(entry.getValue(), trampolineRegion, trampOffset);
+                    entryTrampolinePtrs.put(
+                            entry.getKey(),
+                            trampolineRegion.asSlice(
+                                    trampOffset
+                                            - RedlineBridge.align(entry.getValue().length, 16)));
                 }
 
                 // Copy import trampolines and store addresses in funcTable
                 for (int funcId = 0; funcId < numImports; funcId++) {
-                    byte[] code = importTrampolineCode[funcId];
-                    MemorySegment.copy(
-                            MemorySegment.ofArray(code),
-                            0,
-                            trampolineRegion,
-                            trampOffset,
-                            code.length);
-                    MemorySegment trampPtr = trampolineRegion.asSlice(trampOffset);
-                    funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, trampPtr.address());
-                    trampOffset += align(code.length, 16);
+                    byte[] code = trampolines.importTrampolines()[funcId];
+                    long addr = trampolineRegion.asSlice(trampOffset).address();
+                    trampOffset = copyCode(code, trampolineRegion, trampOffset);
+                    funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, addr);
                 }
 
                 // Copy internal stub trampolines and update ctxBuffer
                 trampOffset =
-                        copyStubTrampoline(
-                                trampolineStubTrampCode,
+                        copyCodeAndUpdateCtx(
+                                trampolines.trampolineStubTramp(),
                                 trampolineRegion,
                                 trampOffset,
                                 ctxBuffer,
                                 CtxBuffer.TRAMPOLINE_PTR);
                 trampOffset =
-                        copyStubTrampoline(
-                                memGrowStubTrampCode,
+                        copyCodeAndUpdateCtx(
+                                trampolines.memGrowStubTramp(),
                                 trampolineRegion,
                                 trampOffset,
                                 ctxBuffer,
                                 CtxBuffer.MEM_GROW_PTR);
                 trampOffset =
-                        copyStubTrampoline(
-                                memmoveTrampCode,
+                        copyCodeAndUpdateCtx(
+                                trampolines.memmoveTramp(),
                                 trampolineRegion,
                                 trampOffset,
                                 ctxBuffer,
                                 CtxBuffer.MEMMOVE_PTR);
                 trampOffset =
-                        copyStubTrampoline(
-                                memsetTrampCode,
+                        copyCodeAndUpdateCtx(
+                                trampolines.memsetTramp(),
                                 trampolineRegion,
                                 trampOffset,
                                 ctxBuffer,
@@ -467,10 +408,6 @@ public final class NativeMachine implements Machine {
     @SuppressWarnings("unchecked")
     private static <E extends Throwable> void sneakyThrow(Throwable e) throws E {
         throw (E) e;
-    }
-
-    private static long align(long value, long alignment) {
-        return (value + alignment - 1) & ~(alignment - 1);
     }
 
     // --- Downcall creation (Java → native) ---
@@ -1060,72 +997,17 @@ public final class NativeMachine implements Machine {
         };
     }
 
-    // --- Trampoline compilation helpers ---
+    // --- Trampoline copy helpers ---
 
-    private static int valTypeToBridgeType(ValType type) {
-        if (type.equals(ValType.I32)) {
-            return RedlineBridge.TYPE_I32;
-        }
-        if (type.equals(ValType.I64)) {
-            return RedlineBridge.TYPE_I64;
-        }
-        if (type.equals(ValType.F32)) {
-            return RedlineBridge.TYPE_F32;
-        }
-        if (type.equals(ValType.F64)) {
-            return RedlineBridge.TYPE_F64;
-        }
-        int op = type.opcode();
-        if (op == ValType.ID.RefNull || op == ValType.ID.Ref) {
-            return RedlineBridge.TYPE_I64;
-        }
-        throw new ChicoryException("Unsupported type for trampoline: " + type);
-    }
-
-    private static void buildTrampolineSig(RedlineBridge bridge, FunctionType funcType) {
-        bridge.beginTrampolineSig();
-        bridge.trampolineSigAddParam(RedlineBridge.TYPE_I64); // memBase
-        bridge.trampolineSigAddParam(RedlineBridge.TYPE_I64); // ctxPtr
-        for (ValType param : funcType.params()) {
-            bridge.trampolineSigAddParam(valTypeToBridgeType(param));
-        }
-        if (funcType.returns().size() > 1) {
-            bridge.trampolineSigAddReturn(RedlineBridge.TYPE_I64);
-        } else {
-            for (ValType ret : funcType.returns()) {
-                bridge.trampolineSigAddReturn(valTypeToBridgeType(ret));
-            }
-        }
-    }
-
-    private static byte[] compileEntryTrampoline(RedlineBridge bridge, FunctionType funcType) {
-        buildTrampolineSig(bridge, funcType);
-        return bridge.compileEntryTrampoline();
-    }
-
-    private static byte[] compileImportTrampoline(
-            RedlineBridge bridge, FunctionType funcType, long stubAddr) {
-        buildTrampolineSig(bridge, funcType);
-        return bridge.compileImportTrampoline(stubAddr);
-    }
-
-    private static byte[] compileStubTrampoline(
-            RedlineBridge bridge, long stubAddr, int[] paramTypes, int[] returnTypes) {
-        bridge.beginTrampolineSig();
-        for (int p : paramTypes) {
-            bridge.trampolineSigAddParam(p);
-        }
-        for (int r : returnTypes) {
-            bridge.trampolineSigAddReturn(r);
-        }
-        return bridge.compileImportTrampoline(stubAddr);
-    }
-
-    private static long copyStubTrampoline(
-            byte[] code, MemorySegment region, long offset, MemorySegment ctxBuf, long ctxOffset) {
+    private static long copyCode(byte[] code, MemorySegment region, long offset) {
         MemorySegment.copy(MemorySegment.ofArray(code), 0, region, offset, code.length);
+        return offset + RedlineBridge.align(code.length, 16);
+    }
+
+    private static long copyCodeAndUpdateCtx(
+            byte[] code, MemorySegment region, long offset, MemorySegment ctxBuf, long ctxOffset) {
         ctxBuf.set(ValueLayout.JAVA_LONG, ctxOffset, region.asSlice(offset).address());
-        return offset + align(code.length, 16);
+        return copyCode(code, region, offset);
     }
 
     // --- Main dispatch ---

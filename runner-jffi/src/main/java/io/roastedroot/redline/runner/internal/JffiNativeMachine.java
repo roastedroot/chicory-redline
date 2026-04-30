@@ -222,11 +222,11 @@ public final class JffiNativeMachine implements Machine {
         long totalSize = 0;
         for (byte[] code : compiledCode) {
             if (code != null) {
-                totalSize += align(code.length, 16);
+                totalSize += RedlineBridge.align(code.length, 16);
             }
         }
         totalSize = Math.max(totalSize, 4096);
-        totalSize = align(totalSize, 4096);
+        totalSize = RedlineBridge.align(totalSize, 4096);
 
         // Allocate executable code region via PageManager
         int osPageSize = (int) PM.pageSize();
@@ -263,7 +263,7 @@ public final class JffiNativeMachine implements Machine {
                     // Store native code address in function pointer table (Tail convention)
                     MEM.putLong(funcTableAddr + (long) funcId * 8, codePtr);
 
-                    offset += align(compiledCode[i].length, 16);
+                    offset += RedlineBridge.align(compiledCode[i].length, 16);
                 }
             }
 
@@ -289,74 +289,19 @@ public final class JffiNativeMachine implements Machine {
             // Compile ABI trampolines via Cranelift bridge
             try (var bridge = new RedlineBridge()) {
                 bridge.init(RedlineTarget.detectHost());
-
-                // Compile per-signature entry trampolines (platform ABI → Tail)
-                Map<FunctionType, byte[]> entryTrampolineCode = new HashMap<>();
-                for (int i = 0; i < compiledCode.length; i++) {
-                    if (compiledCode[i] != null
-                            && !entryTrampolineCode.containsKey(funcTypesByBody[i])) {
-                        entryTrampolineCode.put(
-                                funcTypesByBody[i],
-                                compileEntryTrampoline(bridge, funcTypesByBody[i]));
-                    }
-                }
-
-                // Compile per-import import trampolines (Tail → platform ABI)
-                byte[][] importTrampolineCode = new byte[numImports][];
-                for (int funcId = 0; funcId < numImports; funcId++) {
-                    importTrampolineCode[funcId] =
-                            compileImportTrampoline(
-                                    bridge, importTypes[funcId], importStubAddrs[funcId]);
-                }
-
-                // Compile import trampolines for internal stubs (also called from Tail code)
-                byte[] trampolineStubTrampCode =
-                        compileStubTrampoline(
-                                bridge,
+                var trampolines =
+                        bridge.compileTrampolines(
+                                compiledCode,
+                                funcTypesByBody,
+                                importTypes,
+                                importStubAddrs,
                                 trampolineHandle.getAddress(),
-                                new int[] {RedlineBridge.TYPE_I64},
-                                new int[] {RedlineBridge.TYPE_I64});
-                byte[] memGrowStubTrampCode =
-                        compileStubTrampoline(
-                                bridge,
                                 memGrowHandle.getAddress(),
-                                new int[] {RedlineBridge.TYPE_I64},
-                                new int[] {RedlineBridge.TYPE_I64});
-                byte[] memmoveTrampCode =
-                        compileStubTrampoline(
-                                bridge,
                                 MEMMOVE_ADDR,
-                                new int[] {
-                                    RedlineBridge.TYPE_I64,
-                                    RedlineBridge.TYPE_I64,
-                                    RedlineBridge.TYPE_I64
-                                },
-                                new int[] {RedlineBridge.TYPE_I64});
-                byte[] memsetTrampCode =
-                        compileStubTrampoline(
-                                bridge,
-                                MEMSET_ADDR,
-                                new int[] {
-                                    RedlineBridge.TYPE_I64,
-                                    RedlineBridge.TYPE_I64,
-                                    RedlineBridge.TYPE_I64
-                                },
-                                new int[] {RedlineBridge.TYPE_I64});
+                                MEMSET_ADDR);
 
-                // Calculate total trampoline code size
-                long trampTotalSize = 0;
-                for (byte[] code : entryTrampolineCode.values()) {
-                    trampTotalSize += align(code.length, 16);
-                }
-                for (byte[] code : importTrampolineCode) {
-                    trampTotalSize += align(code.length, 16);
-                }
-                trampTotalSize += align(trampolineStubTrampCode.length, 16);
-                trampTotalSize += align(memGrowStubTrampCode.length, 16);
-                trampTotalSize += align(memmoveTrampCode.length, 16);
-                trampTotalSize += align(memsetTrampCode.length, 16);
-                trampTotalSize = Math.max(trampTotalSize, 4096);
-                trampTotalSize = align(trampTotalSize, 4096);
+                long trampTotalSize = Math.max(trampolines.totalSize(), 4096);
+                trampTotalSize = RedlineBridge.align(trampTotalSize, 4096);
 
                 // Allocate trampoline code region
                 this.trampolineRegionOsPages =
@@ -373,50 +318,44 @@ public final class JffiNativeMachine implements Machine {
 
                 // Copy entry trampolines and record their addresses
                 Map<FunctionType, Long> entryTrampolinePtrs = new HashMap<>();
-                for (var entry : entryTrampolineCode.entrySet()) {
-                    MEM.putByteArray(
-                            trampolineRegionAddr + trampOffset,
-                            entry.getValue(),
-                            0,
-                            entry.getValue().length);
+                for (var entry : trampolines.entryTrampolines().entrySet()) {
                     entryTrampolinePtrs.put(entry.getKey(), trampolineRegionAddr + trampOffset);
-                    trampOffset += align(entry.getValue().length, 16);
+                    trampOffset = copyCode(entry.getValue(), trampolineRegionAddr, trampOffset);
                 }
 
                 // Copy import trampolines and store addresses in funcTable
                 for (int funcId = 0; funcId < numImports; funcId++) {
-                    byte[] code = importTrampolineCode[funcId];
-                    MEM.putByteArray(trampolineRegionAddr + trampOffset, code, 0, code.length);
-                    long trampAddr = trampolineRegionAddr + trampOffset;
-                    MEM.putLong(funcTableAddr + (long) funcId * 8, trampAddr);
-                    trampOffset += align(code.length, 16);
+                    byte[] code = trampolines.importTrampolines()[funcId];
+                    MEM.putLong(
+                            funcTableAddr + (long) funcId * 8, trampolineRegionAddr + trampOffset);
+                    trampOffset = copyCode(code, trampolineRegionAddr, trampOffset);
                 }
 
                 // Copy internal stub trampolines and update ctxBuffer
                 trampOffset =
-                        copyStubTrampoline(
-                                trampolineStubTrampCode,
+                        copyCodeAndUpdateCtx(
+                                trampolines.trampolineStubTramp(),
                                 trampolineRegionAddr,
                                 trampOffset,
                                 ctxBufferAddr,
                                 CtxBuffer.TRAMPOLINE_PTR);
                 trampOffset =
-                        copyStubTrampoline(
-                                memGrowStubTrampCode,
+                        copyCodeAndUpdateCtx(
+                                trampolines.memGrowStubTramp(),
                                 trampolineRegionAddr,
                                 trampOffset,
                                 ctxBufferAddr,
                                 CtxBuffer.MEM_GROW_PTR);
                 trampOffset =
-                        copyStubTrampoline(
-                                memmoveTrampCode,
+                        copyCodeAndUpdateCtx(
+                                trampolines.memmoveTramp(),
                                 trampolineRegionAddr,
                                 trampOffset,
                                 ctxBufferAddr,
                                 CtxBuffer.MEMMOVE_PTR);
                 trampOffset =
-                        copyStubTrampoline(
-                                memsetTrampCode,
+                        copyCodeAndUpdateCtx(
+                                trampolines.memsetTramp(),
                                 trampolineRegionAddr,
                                 trampOffset,
                                 ctxBufferAddr,
@@ -571,10 +510,6 @@ public final class JffiNativeMachine implements Machine {
     @SuppressWarnings("unchecked")
     private static <E extends Throwable> void sneakyThrow(Throwable e) throws E {
         throw (E) e;
-    }
-
-    private static long align(long value, long alignment) {
-        return (value + alignment - 1) & ~(alignment - 1);
     }
 
     // --- jffi type mapping ---
@@ -1227,72 +1162,17 @@ public final class JffiNativeMachine implements Machine {
         return INVOKER.invokeLong(func, buffer);
     }
 
-    // --- Trampoline compilation helpers ---
+    // --- Trampoline copy helpers ---
 
-    private static int valTypeToBridgeType(ValType type) {
-        if (type.equals(ValType.I32)) {
-            return RedlineBridge.TYPE_I32;
-        }
-        if (type.equals(ValType.I64)) {
-            return RedlineBridge.TYPE_I64;
-        }
-        if (type.equals(ValType.F32)) {
-            return RedlineBridge.TYPE_F32;
-        }
-        if (type.equals(ValType.F64)) {
-            return RedlineBridge.TYPE_F64;
-        }
-        int op = type.opcode();
-        if (op == ValType.ID.RefNull || op == ValType.ID.Ref) {
-            return RedlineBridge.TYPE_I64;
-        }
-        throw new ChicoryException("Unsupported type for trampoline: " + type);
-    }
-
-    private static void buildTrampolineSig(RedlineBridge bridge, FunctionType funcType) {
-        bridge.beginTrampolineSig();
-        bridge.trampolineSigAddParam(RedlineBridge.TYPE_I64); // memBase
-        bridge.trampolineSigAddParam(RedlineBridge.TYPE_I64); // ctxPtr
-        for (ValType param : funcType.params()) {
-            bridge.trampolineSigAddParam(valTypeToBridgeType(param));
-        }
-        if (funcType.returns().size() > 1) {
-            bridge.trampolineSigAddReturn(RedlineBridge.TYPE_I64);
-        } else {
-            for (ValType ret : funcType.returns()) {
-                bridge.trampolineSigAddReturn(valTypeToBridgeType(ret));
-            }
-        }
-    }
-
-    private static byte[] compileEntryTrampoline(RedlineBridge bridge, FunctionType funcType) {
-        buildTrampolineSig(bridge, funcType);
-        return bridge.compileEntryTrampoline();
-    }
-
-    private static byte[] compileImportTrampoline(
-            RedlineBridge bridge, FunctionType funcType, long stubAddr) {
-        buildTrampolineSig(bridge, funcType);
-        return bridge.compileImportTrampoline(stubAddr);
-    }
-
-    private static byte[] compileStubTrampoline(
-            RedlineBridge bridge, long stubAddr, int[] paramTypes, int[] returnTypes) {
-        bridge.beginTrampolineSig();
-        for (int p : paramTypes) {
-            bridge.trampolineSigAddParam(p);
-        }
-        for (int r : returnTypes) {
-            bridge.trampolineSigAddReturn(r);
-        }
-        return bridge.compileImportTrampoline(stubAddr);
-    }
-
-    private static long copyStubTrampoline(
-            byte[] code, long regionAddr, long offset, long ctxAddr, long ctxOffset) {
+    private static long copyCode(byte[] code, long regionAddr, long offset) {
         MEM.putByteArray(regionAddr + offset, code, 0, code.length);
+        return offset + RedlineBridge.align(code.length, 16);
+    }
+
+    private static long copyCodeAndUpdateCtx(
+            byte[] code, long regionAddr, long offset, long ctxAddr, long ctxOffset) {
         MEM.putLong(ctxAddr + ctxOffset, regionAddr + offset);
-        return offset + align(code.length, 16);
+        return copyCode(code, regionAddr, offset);
     }
 
     // --- Main dispatch ---
