@@ -32,6 +32,11 @@
       <artifactId>redline-api</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>redline-bridge</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 
 </project>

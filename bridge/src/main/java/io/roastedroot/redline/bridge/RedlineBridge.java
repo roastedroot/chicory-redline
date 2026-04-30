@@ -19,10 +19,7 @@ public final class RedlineBridge implements AutoCloseable {
     private final RedlineBridge_ModuleExports exports;
 
     public RedlineBridge() {
-        var wasiOpts =
-                WasiOptions.builder()
-                        // DEBUG: .inheritSystem()
-                        .build();
+        var wasiOpts = WasiOptions.builder().build();
         wasi = WasiPreview1.builder().withOptions(wasiOpts).build();
         var imports = ImportValues.builder().addFunction(wasi.toHostFunctions()).build();
 
@@ -65,5 +62,31 @@ public final class RedlineBridge implements AutoCloseable {
         int codePtr = exports.getCodePtr();
         int codeLen = exports.getCodeLen();
         return exports.memory().readBytes(codePtr, codeLen);
+    }
+
+    public void beginTrampolineSig() {
+        exports.beginTrampolineSig();
+    }
+
+    public void trampolineSigAddParam(int wasmType) {
+        exports.trampolineSigAddParam(wasmType);
+    }
+
+    public void trampolineSigAddReturn(int wasmType) {
+        exports.trampolineSigAddReturn(wasmType);
+    }
+
+    public byte[] compileEntryTrampoline() {
+        exports.compileEntryTrampoline();
+        int ptr = exports.getCodePtr();
+        int len = exports.getCodeLen();
+        return exports.memory().readBytes(ptr, len);
+    }
+
+    public byte[] compileImportTrampoline(long stubAddr) {
+        exports.compileImportTrampoline((int) (stubAddr & 0xFFFFFFFFL), (int) (stubAddr >>> 32));
+        int ptr = exports.getCodePtr();
+        int len = exports.getCodeLen();
+        return exports.memory().readBytes(ptr, len);
     }
 }

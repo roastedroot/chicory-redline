@@ -19,6 +19,7 @@ use target_lexicon::Triple;
 
 static mut ISA: Option<Arc<dyn TargetIsa>> = None;
 static mut COMPILED_CODE: Vec<u8> = Vec::new();
+static mut TRAMPOLINE_SIG: Option<Signature> = None;
 
 /// Session holds the FunctionBuilder and its backing data.
 /// We use raw pointers to keep FunctionBuilder alive across FFI calls,
@@ -111,7 +112,9 @@ pub extern "C" fn init(target_ptr: *const u8, target_len: u32) {
     let isa = isa_builder
         .finish(flags)
         .expect("Failed to create ISA");
-    unsafe { ISA = Some(isa); }
+    unsafe {
+        ISA = Some(isa);
+    }
 }
 
 /// Create a new function and its FunctionBuilder. Call add_param_type/add_return_type
@@ -1759,4 +1762,137 @@ pub extern "C" fn get_code_ptr() -> *const u8 {
 #[no_mangle]
 pub extern "C" fn get_code_len() -> u32 {
     unsafe { COMPILED_CODE.len() as u32 }
+}
+
+// --- Trampoline compilation ---
+
+#[no_mangle]
+pub extern "C" fn begin_trampoline_sig() {
+    unsafe { TRAMPOLINE_SIG = Some(Signature::new(CallConv::Tail)); }
+}
+
+#[no_mangle]
+pub extern "C" fn trampoline_sig_add_param(wasm_type: u32) {
+    unsafe {
+        TRAMPOLINE_SIG.as_mut().unwrap()
+            .params.push(AbiParam::new(wasm_type_to_clif(wasm_type)));
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn trampoline_sig_add_return(wasm_type: u32) {
+    unsafe {
+        TRAMPOLINE_SIG.as_mut().unwrap()
+            .returns.push(AbiParam::new(wasm_type_to_clif(wasm_type)));
+    }
+}
+
+/// Compile an entry trampoline: platform ABI → Tail convention.
+/// The trampoline takes (funcPtr, memBase, ctxPtr, args...) with platform ABI,
+/// and calls through funcPtr with Tail convention.
+/// Uses the signature from begin_trampoline_sig() as the Tail-convention inner signature.
+/// Returns compiled code length; retrieve with get_code_ptr/get_code_len.
+#[no_mangle]
+pub extern "C" fn compile_entry_trampoline() -> u32 {
+    let isa = unsafe { ISA.as_ref().expect("ISA not initialized") };
+    let tail_sig = unsafe { TRAMPOLINE_SIG.take().expect("No trampoline sig") };
+
+    let platform_conv = isa.default_call_conv();
+    let mut outer_sig = Signature::new(platform_conv);
+    outer_sig.params.push(AbiParam::new(types::I64)); // funcPtr
+    for p in &tail_sig.params {
+        outer_sig.params.push(p.clone());
+    }
+    for r in &tail_sig.returns {
+        outer_sig.returns.push(r.clone());
+    }
+
+    let mut func = Function::with_name_signature(UserFuncName::user(0, 0), outer_sig);
+    let sig_ref = func.import_signature(tail_sig);
+
+    let mut builder_ctx = FunctionBuilderContext::new();
+    let mut builder = FunctionBuilder::new(&mut func, &mut builder_ctx);
+
+    let entry = builder.create_block();
+    builder.append_block_params_for_function_params(entry);
+    builder.switch_to_block(entry);
+    builder.seal_block(entry);
+
+    let params = builder.block_params(entry).to_vec();
+    let func_ptr = params[0];
+    let call_args = &params[1..];
+
+    let inst = builder.ins().call_indirect(sig_ref, func_ptr, call_args);
+    let results = builder.inst_results(inst).to_vec();
+    builder.ins().return_(&results);
+    builder.finalize();
+
+    let mut ctx = Context::for_function(func);
+    let compiled = ctx
+        .compile(isa.as_ref(), &mut ControlPlane::default())
+        .expect("Entry trampoline compilation failed");
+
+    unsafe {
+        COMPILED_CODE = compiled.code_buffer().to_vec();
+        COMPILED_CODE.len() as u32
+    }
+}
+
+/// Compile an import trampoline: Tail convention → platform ABI.
+/// The trampoline has Tail convention with signature (memBase, ctxPtr, args...) -> result.
+/// It loads the stub address from an iconst and calls through it with platform ABI.
+/// stub_addr is passed as two i32 halves (lo, hi) since we run in wasm32.
+/// Uses the signature from begin_trampoline_sig() for the inner params/returns.
+/// Returns compiled code length; retrieve with get_code_ptr/get_code_len.
+#[no_mangle]
+pub extern "C" fn compile_import_trampoline(stub_addr_lo: u32, stub_addr_hi: u32) -> u32 {
+    let isa = unsafe { ISA.as_ref().expect("ISA not initialized") };
+    let tail_sig = unsafe { TRAMPOLINE_SIG.take().expect("No trampoline sig") };
+    let stub_addr = ((stub_addr_hi as u64) << 32) | (stub_addr_lo as u64);
+
+    let mut outer_sig = Signature::new(CallConv::Tail);
+    for p in &tail_sig.params {
+        outer_sig.params.push(p.clone());
+    }
+    for r in &tail_sig.returns {
+        outer_sig.returns.push(r.clone());
+    }
+
+    let platform_conv = isa.default_call_conv();
+    let mut platform_sig = Signature::new(platform_conv);
+    for p in &tail_sig.params {
+        platform_sig.params.push(p.clone());
+    }
+    for r in &tail_sig.returns {
+        platform_sig.returns.push(r.clone());
+    }
+
+    let mut func = Function::with_name_signature(UserFuncName::user(0, 0), outer_sig);
+    let sig_ref = func.import_signature(platform_sig);
+
+    let mut builder_ctx = FunctionBuilderContext::new();
+    let mut builder = FunctionBuilder::new(&mut func, &mut builder_ctx);
+
+    let entry = builder.create_block();
+    builder.append_block_params_for_function_params(entry);
+    builder.switch_to_block(entry);
+    builder.seal_block(entry);
+
+    let params = builder.block_params(entry).to_vec();
+    let stub_ptr = builder.ins().iconst(types::I64, stub_addr as i64);
+
+    let inst = builder.ins().call_indirect(sig_ref, stub_ptr, &params);
+    let results = builder.inst_results(inst).to_vec();
+    builder.ins().return_(&results);
+    builder.finalize();
+
+    let mut ctx = Context::for_function(func);
+    let compiled = ctx
+        .compile(isa.as_ref(), &mut ControlPlane::default())
+        .expect("Import trampoline compilation failed");
+
+    unsafe {
+        COMPILED_CODE = compiled.code_buffer().to_vec();
+        COMPILED_CODE.len() as u32
+    }
 }
