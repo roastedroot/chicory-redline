@@ -85,7 +85,6 @@ public final class JffiNativeMachine implements Machine {
     }
 
     private final Instance instance;
-    private final CallContext[] callContexts; // jffi CallContext per compiled func
     private final CallContext[] entryTrampolineCallCtxs; // entry trampoline CallContext per func
     private final long[] entryTrampolineAddrs; // entry trampoline native addr per func
     private final FunctionType[] funcTypes; // wasm FunctionType per func
@@ -138,7 +137,6 @@ public final class JffiNativeMachine implements Machine {
                                                                 .ExternalType.FUNCTION)
                                 .count();
         int totalFuncs = numImports + module.codeSection().functionBodyCount();
-        this.callContexts = new CallContext[totalFuncs];
         this.entryTrampolineCallCtxs = new CallContext[totalFuncs];
         this.entryTrampolineAddrs = new long[totalFuncs];
         this.funcTypes = new FunctionType[totalFuncs];
@@ -257,7 +255,6 @@ public final class JffiNativeMachine implements Machine {
                     long codePtr = codeRegionAddr + offset;
                     funcCodeAddrs[i] = codePtr;
                     funcTypesByBody[i] = funcType;
-                    callContexts[funcId] = createCallContext(funcType);
                     funcTypes[funcId] = funcType;
 
                     // Store native code address in function pointer table (Tail convention)
@@ -532,26 +529,6 @@ public final class JffiNativeMachine implements Machine {
             return Type.SINT64;
         }
         throw new ChicoryException("Unsupported type for native: " + type);
-    }
-
-    private static CallContext createCallContext(FunctionType funcType) {
-        var paramTypes = new ArrayList<Type>();
-        paramTypes.add(Type.POINTER); // memBase
-        paramTypes.add(Type.POINTER); // ctxPtr
-        for (ValType param : funcType.params()) {
-            paramTypes.add(valTypeToJffiType(param));
-        }
-
-        Type returnType;
-        if (funcType.returns().isEmpty()) {
-            returnType = Type.VOID;
-        } else if (funcType.returns().size() > 1) {
-            returnType = Type.SINT64; // multi-return: native returns dummy
-        } else {
-            returnType = valTypeToJffiType(funcType.returns().get(0));
-        }
-
-        return new CallContext(returnType, paramTypes.toArray(new Type[0]));
     }
 
     private static CallContext createEntryTrampolineCallContext(FunctionType funcType) {
@@ -1016,72 +993,6 @@ public final class JffiNativeMachine implements Machine {
     }
 
     // --- Native function invocation ---
-
-    private long invokeNative(
-            CallContext callCtx,
-            long funcAddr,
-            FunctionType funcType,
-            long memBase,
-            long ctxPtr,
-            long[] wasmArgs) {
-        int nativeArgCount = 2 + wasmArgs.length;
-
-        // Fast path: ≤6 native args use invokeN* (CallContext + address + args)
-        switch (nativeArgCount) {
-            case 2:
-                return INVOKER.invokeN2(callCtx, funcAddr, memBase, ctxPtr);
-            case 3:
-                return INVOKER.invokeN3(callCtx, funcAddr, memBase, ctxPtr, wasmArgs[0]);
-            case 4:
-                return INVOKER.invokeN4(
-                        callCtx, funcAddr, memBase, ctxPtr, wasmArgs[0], wasmArgs[1]);
-            case 5:
-                return INVOKER.invokeN5(
-                        callCtx, funcAddr, memBase, ctxPtr, wasmArgs[0], wasmArgs[1], wasmArgs[2]);
-            case 6:
-                return INVOKER.invokeN6(
-                        callCtx,
-                        funcAddr,
-                        memBase,
-                        ctxPtr,
-                        wasmArgs[0],
-                        wasmArgs[1],
-                        wasmArgs[2],
-                        wasmArgs[3]);
-            default:
-                // >6 args: use HeapInvocationBuffer
-                return invokeViaBuffer(callCtx, funcAddr, funcType, memBase, ctxPtr, wasmArgs);
-        }
-    }
-
-    private long invokeViaBuffer(
-            CallContext callCtx,
-            long funcAddr,
-            FunctionType funcType,
-            long memBase,
-            long ctxPtr,
-            long[] wasmArgs) {
-        var func = new Function(funcAddr, callCtx);
-        var buffer = new HeapInvocationBuffer(func);
-        buffer.putAddress(memBase);
-        buffer.putAddress(ctxPtr);
-        for (int i = 0; i < wasmArgs.length; i++) {
-            ValType paramType = funcType.params().get(i);
-            if (paramType.equals(ValType.I32)) {
-                buffer.putInt((int) wasmArgs[i]);
-            } else if (paramType.equals(ValType.F32)) {
-                buffer.putFloat(Float.intBitsToFloat((int) wasmArgs[i]));
-            } else if (paramType.equals(ValType.F64)) {
-                buffer.putDouble(Double.longBitsToDouble(wasmArgs[i]));
-            } else {
-                // I64, ref types
-                buffer.putLong(wasmArgs[i]);
-            }
-        }
-
-        // invokeLong works for all return types in buffer path
-        return INVOKER.invokeLong(func, buffer);
-    }
 
     private long invokeViaEntryTrampoline(
             CallContext trampolineCallCtx,

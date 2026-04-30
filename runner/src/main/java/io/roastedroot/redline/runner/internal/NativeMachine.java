@@ -286,12 +286,8 @@ public final class NativeMachine implements Machine {
                 // Copy entry trampolines and record their addresses
                 Map<FunctionType, MemorySegment> entryTrampolinePtrs = new HashMap<>();
                 for (var entry : trampolines.entryTrampolines().entrySet()) {
+                    entryTrampolinePtrs.put(entry.getKey(), trampolineRegion.asSlice(trampOffset));
                     trampOffset = copyCode(entry.getValue(), trampolineRegion, trampOffset);
-                    entryTrampolinePtrs.put(
-                            entry.getKey(),
-                            trampolineRegion.asSlice(
-                                    trampOffset
-                                            - RedlineBridge.align(entry.getValue().length, 16)));
                 }
 
                 // Copy import trampolines and store addresses in funcTable
@@ -410,37 +406,7 @@ public final class NativeMachine implements Machine {
         throw (E) e;
     }
 
-    // --- Downcall creation (Java → native) ---
-
-    private MethodHandle createDowncall(MemorySegment codePtr, FunctionType funcType) {
-        var layouts = new ArrayList<ValueLayout>();
-        layouts.add(ValueLayout.ADDRESS); // memBase
-        layouts.add(ValueLayout.ADDRESS); // ctxPtr
-
-        for (ValType param : funcType.params()) {
-            layouts.add(valTypeToLayout(param));
-        }
-
-        ValueLayout returnLayout = null;
-        if (!funcType.returns().isEmpty()) {
-            if (funcType.returns().size() > 1) {
-                // Multi-return: native function returns single i64 dummy
-                returnLayout = ValueLayout.JAVA_LONG;
-            } else {
-                returnLayout = valTypeToLayout(funcType.returns().get(0));
-            }
-        }
-
-        FunctionDescriptor desc;
-        if (returnLayout != null) {
-            desc = FunctionDescriptor.of(returnLayout, layouts.toArray(new ValueLayout[0]));
-        } else {
-            desc = FunctionDescriptor.ofVoid(layouts.toArray(new ValueLayout[0]));
-        }
-
-        MethodHandle handle = Linker.nativeLinker().downcallHandle(codePtr, desc);
-        return adaptHandle(handle, funcType);
-    }
+    // --- Downcall creation (Java → native via entry trampoline) ---
 
     private MethodHandle createDowncallViaTrampoline(
             MemorySegment trampolinePtr, MemorySegment funcCodePtr, FunctionType funcType) {
