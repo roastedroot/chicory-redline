@@ -42,6 +42,7 @@ public class InterruptionTest {
                             assertEquals("interrupted", e.getMessage());
                             interrupted.set(true);
                         });
+        thread.setDaemon(true);
         thread.start();
         Thread.sleep(100);
 

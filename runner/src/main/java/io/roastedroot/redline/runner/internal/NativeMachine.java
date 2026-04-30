@@ -463,6 +463,10 @@ public final class NativeMachine implements Machine {
     @SuppressWarnings("unused")
     private long importDispatchDirect(int funcId) {
         try {
+            if (Thread.interrupted()) {
+                requestInterrupt();
+                Thread.currentThread().interrupt();
+            }
             int argCount = ctxBuffer.get(ValueLayout.JAVA_INT, CtxBuffer.ARG_COUNT);
             long[] args = new long[argCount];
             for (int i = 0; i < argCount; i++) {
@@ -500,6 +504,10 @@ public final class NativeMachine implements Machine {
     @SuppressWarnings("unused")
     private long callIndirectTrampoline(long ctxAddr) {
         try {
+            if (Thread.interrupted()) {
+                requestInterrupt();
+                Thread.currentThread().interrupt();
+            }
             var ctx = MemorySegment.ofAddress(ctxAddr).reinterpret(CTX_SIZE);
             int argCount = ctx.get(ValueLayout.JAVA_INT, CtxBuffer.ARG_COUNT);
 
@@ -705,6 +713,10 @@ public final class NativeMachine implements Machine {
     @SuppressWarnings("unused")
     private long memoryGrowHandler(long ctxAddr) {
         try {
+            if (Thread.interrupted()) {
+                requestInterrupt();
+                Thread.currentThread().interrupt();
+            }
             var ctx = MemorySegment.ofAddress(ctxAddr).reinterpret(CTX_SIZE);
             int delta = ctx.get(ValueLayout.JAVA_INT, CtxBuffer.MEM_GROW_DELTA);
             var mem = instance.memory();
