@@ -29,8 +29,6 @@ public final class RedlineInstance implements AutoCloseable {
     private final Instance instance;
     private final AutoCloseable factory;
     private final boolean nativeBackend;
-    private final Runnable interruptRequester;
-    private final Runnable interruptClearer;
 
     /**
      * Internal: creates a native-backed RedlineInstance.
@@ -38,28 +36,15 @@ public final class RedlineInstance implements AutoCloseable {
      * {@code builder()} method instead.
      */
     public RedlineInstance(Instance instance, AutoCloseable factory) {
-        this(instance, factory, true, null, null);
+        this.instance = instance;
+        this.factory = factory;
+        this.nativeBackend = true;
     }
 
-    public RedlineInstance(
-            Instance instance,
-            AutoCloseable factory,
-            Runnable interruptRequester,
-            Runnable interruptClearer) {
-        this(instance, factory, true, interruptRequester, interruptClearer);
-    }
-
-    private RedlineInstance(
-            Instance instance,
-            AutoCloseable factory,
-            boolean nativeBackend,
-            Runnable interruptRequester,
-            Runnable interruptClearer) {
+    private RedlineInstance(Instance instance, AutoCloseable factory, boolean nativeBackend) {
         this.instance = instance;
         this.factory = factory;
         this.nativeBackend = nativeBackend;
-        this.interruptRequester = interruptRequester;
-        this.interruptClearer = interruptClearer;
     }
 
     /**
@@ -67,7 +52,7 @@ public final class RedlineInstance implements AutoCloseable {
      * Used by {@code UniversalInstance} when falling back to JVM bytecode.
      */
     public static RedlineInstance forBytecode(Instance instance) {
-        return new RedlineInstance(instance, () -> {}, false, null, null);
+        return new RedlineInstance(instance, () -> {}, false);
     }
 
     /** Return the underlying Chicory {@link Instance}. */
@@ -89,14 +74,14 @@ public final class RedlineInstance implements AutoCloseable {
     }
 
     public void requestInterrupt() {
-        if (interruptRequester != null) {
-            interruptRequester.run();
+        if (factory instanceof Interruptable) {
+            ((Interruptable) factory).requestInterrupt();
         }
     }
 
     public void clearInterrupt() {
-        if (interruptClearer != null) {
-            interruptClearer.run();
+        if (factory instanceof Interruptable) {
+            ((Interruptable) factory).clearInterrupt();
         }
     }
 

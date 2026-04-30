@@ -978,8 +978,32 @@ public final class JffiNativeMachine implements Machine {
                 throw new ChicoryException("interrupted");
             }
 
-            long result =
-                    invokeNative(callCtx, funcAddr, funcType, cachedMemBase, ctxBufferAddr, args);
+            Thread caller = Thread.currentThread();
+            Thread watchdog =
+                    new Thread(
+                            () -> {
+                                while (!Thread.currentThread().isInterrupted()) {
+                                    if (caller.isInterrupted()) {
+                                        requestInterrupt();
+                                        return;
+                                    }
+                                    try {
+                                        Thread.sleep(1);
+                                    } catch (InterruptedException e) {
+                                        return;
+                                    }
+                                }
+                            });
+            watchdog.setDaemon(true);
+            watchdog.start();
+            long result;
+            try {
+                result =
+                        invokeNative(
+                                callCtx, funcAddr, funcType, cachedMemBase, ctxBufferAddr, args);
+            } finally {
+                watchdog.interrupt();
+            }
 
             // Check for exceptions from upcall stubs first — a host function
             // may throw (e.g. WasiExitException from proc_exit) and then the

@@ -21,19 +21,7 @@ public class InterruptionTest {
     public void shouldInterruptLoop() throws InterruptedException {
         try (var ni = buildInstance("compiled/infinite-loop.c.wasm")) {
             var function = ni.instance().export("run");
-            AtomicBoolean interrupted = new AtomicBoolean();
-            Thread thread =
-                    new Thread(
-                            () -> {
-                                var e = assertThrows(ChicoryException.class, function::apply);
-                                assertEquals("interrupted", e.getMessage());
-                                interrupted.set(true);
-                            });
-            thread.start();
-            Thread.sleep(100);
-            ni.requestInterrupt();
-            SECONDS.timedJoin(thread, 10);
-            assertTrue(interrupted.get());
+            assertInterruption(function::apply);
         }
     }
 
@@ -41,41 +29,25 @@ public class InterruptionTest {
     public void shouldInterruptCall() throws InterruptedException {
         try (var ni = buildInstance("compiled/power.c.wasm")) {
             var function = ni.instance().export("run");
-            AtomicBoolean interrupted = new AtomicBoolean();
-            Thread thread =
-                    new Thread(
-                            () -> {
-                                var e =
-                                        assertThrows(
-                                                ChicoryException.class, () -> function.apply(100));
-                                assertEquals("interrupted", e.getMessage());
-                                interrupted.set(true);
-                            });
-            thread.start();
-            Thread.sleep(100);
-            ni.requestInterrupt();
-            SECONDS.timedJoin(thread, 10);
-            assertTrue(interrupted.get());
+            assertInterruption(() -> function.apply(100));
         }
     }
 
-    @Test
-    public void shouldInterruptViaThreadInterrupt() throws InterruptedException {
-        try (var ni = buildInstance("compiled/infinite-loop.c.wasm")) {
-            var function = ni.instance().export("run");
-            AtomicBoolean interrupted = new AtomicBoolean();
-            Thread thread =
-                    new Thread(
-                            () -> {
-                                Thread.currentThread().interrupt();
-                                var e = assertThrows(ChicoryException.class, function::apply);
-                                assertEquals("interrupted", e.getMessage());
-                                interrupted.set(true);
-                            });
-            thread.start();
-            SECONDS.timedJoin(thread, 10);
-            assertTrue(interrupted.get());
-        }
+    private static void assertInterruption(Runnable function) throws InterruptedException {
+        AtomicBoolean interrupted = new AtomicBoolean();
+        Thread thread =
+                new Thread(
+                        () -> {
+                            var e = assertThrows(ChicoryException.class, function::run);
+                            assertEquals("interrupted", e.getMessage());
+                            interrupted.set(true);
+                        });
+        thread.start();
+        Thread.sleep(100);
+
+        thread.interrupt();
+        SECONDS.timedJoin(thread, 10);
+        assertTrue(interrupted.get());
     }
 
     private static RedlineInstance buildInstance(String resource) {

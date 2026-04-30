@@ -12,6 +12,7 @@ import com.dylibso.chicory.wasm.types.MutabilityType;
 import com.dylibso.chicory.wasm.types.Table;
 import com.dylibso.chicory.wasm.types.ValType;
 import com.kenai.jffi.MemoryIO;
+import io.roastedroot.redline.api.Interruptable;
 import io.roastedroot.redline.api.RedlineInstance;
 import io.roastedroot.redline.runner.internal.JffiNativeGlobalInstance;
 import io.roastedroot.redline.runner.internal.JffiNativeMachine;
@@ -31,7 +32,7 @@ import java.util.function.Function;
  * }
  * </pre>
  */
-public final class JffiNativeMachineFactory implements AutoCloseable {
+public final class JffiNativeMachineFactory implements AutoCloseable, Interruptable {
 
     private static final MemoryIO MEM = MemoryIO.getInstance();
 
@@ -111,12 +112,14 @@ public final class JffiNativeMachineFactory implements AutoCloseable {
         return nativeMachine;
     }
 
+    @Override
     public void requestInterrupt() {
         if (nativeMachine != null) {
             nativeMachine.requestInterrupt();
         }
     }
 
+    @Override
     public void clearInterrupt() {
         if (nativeMachine != null) {
             nativeMachine.clearInterrupt();
@@ -204,11 +207,7 @@ public final class JffiNativeMachineFactory implements AutoCloseable {
             if (memoryLimits != null) {
                 instanceBuilder.withMemoryLimits(memoryLimits);
             }
-            return new RedlineInstance(
-                    instanceBuilder.build(),
-                    factory,
-                    factory::requestInterrupt,
-                    factory::clearInterrupt);
+            return new RedlineInstance(instanceBuilder.build(), factory);
         }
     }
 }
