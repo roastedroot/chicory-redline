@@ -103,7 +103,6 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: '11'
-        cache: maven
 
     - name: Run tests (Java 11)
       run: mvn -B surefire:test -P jffi,ci
