@@ -463,6 +463,10 @@ public final class NativeMachine implements Machine {
     @SuppressWarnings("unused")
     private long importDispatchDirect(int funcId) {
         try {
+            if (Thread.interrupted()) {
+                requestInterrupt();
+                Thread.currentThread().interrupt();
+            }
             int argCount = ctxBuffer.get(ValueLayout.JAVA_INT, CtxBuffer.ARG_COUNT);
             long[] args = new long[argCount];
             for (int i = 0; i < argCount; i++) {
@@ -500,6 +504,10 @@ public final class NativeMachine implements Machine {
     @SuppressWarnings("unused")
     private long callIndirectTrampoline(long ctxAddr) {
         try {
+            if (Thread.interrupted()) {
+                requestInterrupt();
+                Thread.currentThread().interrupt();
+            }
             var ctx = MemorySegment.ofAddress(ctxAddr).reinterpret(CTX_SIZE);
             int argCount = ctx.get(ValueLayout.JAVA_INT, CtxBuffer.ARG_COUNT);
 
@@ -705,6 +713,10 @@ public final class NativeMachine implements Machine {
     @SuppressWarnings("unused")
     private long memoryGrowHandler(long ctxAddr) {
         try {
+            if (Thread.interrupted()) {
+                requestInterrupt();
+                Thread.currentThread().interrupt();
+            }
             var ctx = MemorySegment.ofAddress(ctxAddr).reinterpret(CTX_SIZE);
             int delta = ctx.get(ValueLayout.JAVA_INT, CtxBuffer.MEM_GROW_DELTA);
             var mem = instance.memory();
@@ -828,6 +840,7 @@ public final class NativeMachine implements Machine {
             case CtxBuffer.TRAP_INDIRECT_CALL_TYPE_MISMATCH ->
                     new ChicoryException("indirect call type mismatch");
             case CtxBuffer.TRAP_UNALIGNED_ATOMIC -> new ChicoryException("unaligned atomic");
+            case CtxBuffer.TRAP_INTERRUPTED -> new ChicoryException("interrupted");
             default -> new ChicoryException("trap: unknown code " + trapCode);
         };
     }
@@ -919,7 +932,34 @@ public final class NativeMachine implements Machine {
                 ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.MEMORY_PAGES, mem.pages());
             }
 
-            long result = (long) handle.invokeExact(cachedMemBase, ctxBuffer, args);
+            if (Thread.interrupted()) {
+                throw new ChicoryException("interrupted");
+            }
+
+            Thread caller = Thread.currentThread();
+            Thread watchdog =
+                    new Thread(
+                            () -> {
+                                while (!Thread.currentThread().isInterrupted()) {
+                                    if (caller.isInterrupted()) {
+                                        requestInterrupt();
+                                        return;
+                                    }
+                                    try {
+                                        Thread.sleep(1);
+                                    } catch (InterruptedException e) {
+                                        return;
+                                    }
+                                }
+                            });
+            watchdog.setDaemon(true);
+            watchdog.start();
+            long result;
+            try {
+                result = (long) handle.invokeExact(cachedMemBase, ctxBuffer, args);
+            } finally {
+                watchdog.interrupt();
+            }
 
             // Check for exceptions from upcall stubs first — a host function
             // may throw (e.g. WasiExitException from proc_exit) and then the
@@ -936,6 +976,10 @@ public final class NativeMachine implements Machine {
             int trapCode = ctxBuffer.get(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE);
             if (trapCode != 0) {
                 ctxBuffer.set(ValueLayout.JAVA_INT, CtxBuffer.TRAP_CODE, 0);
+                if (trapCode == CtxBuffer.TRAP_INTERRUPTED) {
+                    ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.INTERRUPT_FLAG, 0L);
+                    Thread.currentThread().interrupt();
+                }
                 throw trapException(trapCode);
             }
 
@@ -965,6 +1009,14 @@ public final class NativeMachine implements Machine {
             // (ctxBuffer, funcTypesArray, code region) while code is executing.
             Reference.reachabilityFence(this);
         }
+    }
+
+    public void requestInterrupt() {
+        ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.INTERRUPT_FLAG, 1L);
+    }
+
+    public void clearInterrupt() {
+        ctxBuffer.set(ValueLayout.JAVA_LONG, CtxBuffer.INTERRUPT_FLAG, 0L);
     }
 
     private static long narrowReturnValue(long raw, ValType type) {

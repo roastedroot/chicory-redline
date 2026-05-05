@@ -326,6 +326,40 @@ public final class NativeCompiler {
             bridge.exports().switchToBlock(okBlock);
         }
 
+        // --- Interrupt check ---
+        // If INTERRUPT_FLAG != 0 → trap immediately.
+        // Cost: 1 load + 1 compare + 1 branch (predicted not-taken).
+        {
+            int flag =
+                    bridge.exports()
+                            .emitLoadI64(
+                                    bridge.exports().useVar(ctxPtrVar),
+                                    bridge.exports().emitIconst32(0),
+                                    CtxBuffer.INTERRUPT_FLAG);
+            int zeroI64 = bridge.exports().emitIconst64(0, 0);
+            int interrupted = bridge.exports().emitIcmp(1, flag, zeroI64); // NE
+            int trapBlock = bridge.exports().createBlock();
+            int okBlock = bridge.exports().createBlock();
+            bridge.exports().emitBrif(interrupted, trapBlock, okBlock);
+
+            bridge.exports().switchToBlock(trapBlock);
+            int ctxVal = bridge.exports().useVar(ctxPtrVar);
+            int zeroT = bridge.exports().emitIconst32(0);
+            int code = bridge.exports().emitIconst32(CtxBuffer.TRAP_INTERRUPTED);
+            bridge.exports().emitStoreI32(ctxVal, zeroT, code, CtxBuffer.TRAP_CODE);
+            if (multiReturn || funcType.returns().isEmpty()) {
+                if (funcType.returns().isEmpty()) {
+                    bridge.exports().emitReturnVoid();
+                } else {
+                    bridge.exports().emitReturn(bridge.exports().emitIconst64(0, 0));
+                }
+            } else {
+                bridge.exports().emitReturn(emitZero(funcType.returns().get(0)));
+            }
+
+            bridge.exports().switchToBlock(okBlock);
+        }
+
         // --- Create emit context ---
         var valueStack = new NativeValueStack();
         var ctx =
@@ -1446,6 +1480,26 @@ public final class NativeCompiler {
         for (int pid : loopParamIds) {
             ctx.valueStack.push(pid);
         }
+
+        // --- Interrupt check at loop header ---
+        {
+            int flag =
+                    bridge.exports()
+                            .emitLoadI64(
+                                    bridge.exports().useVar(ctx.ctxPtrVar),
+                                    bridge.exports().emitIconst32(0),
+                                    CtxBuffer.INTERRUPT_FLAG);
+            int zeroI64 = bridge.exports().emitIconst64(0, 0);
+            int interrupted = bridge.exports().emitIcmp(1, flag, zeroI64); // NE
+            int trapBlock = bridge.exports().createBlock();
+            int okBlock = bridge.exports().createBlock();
+            bridge.exports().emitBrif(interrupted, trapBlock, okBlock);
+
+            NativeEmitters.fillTrapBlock(ctx, trapBlock, CtxBuffer.TRAP_INTERRUPTED);
+
+            bridge.exports().switchToBlock(okBlock);
+        }
+
         controlStack.push(
                 new ControlFrame(
                         ControlFrame.Kind.LOOP,

@@ -11,6 +11,7 @@ import com.dylibso.chicory.wasm.types.MemoryLimits;
 import com.dylibso.chicory.wasm.types.MutabilityType;
 import com.dylibso.chicory.wasm.types.Table;
 import com.dylibso.chicory.wasm.types.ValType;
+import io.roastedroot.redline.api.Interruptable;
 import io.roastedroot.redline.api.RedlineInstance;
 import io.roastedroot.redline.runner.internal.NativeGlobalInstance;
 import io.roastedroot.redline.runner.internal.NativeMachine;
@@ -36,7 +37,7 @@ import java.util.function.Function;
  * by both the table/global factories and the NativeMachine. This ensures tables
  * and globals are created directly in off-heap memory — no sync or reflection needed.
  */
-public final class NativeMachineFactory implements AutoCloseable {
+public final class NativeMachineFactory implements AutoCloseable, Interruptable {
 
     private final Arena arena = Arena.ofShared();
     private final WasmModule module;
@@ -120,6 +121,20 @@ public final class NativeMachineFactory implements AutoCloseable {
                         precompiledCode,
                         compilerFunction);
         return nativeMachine;
+    }
+
+    @Override
+    public void requestInterrupt() {
+        if (nativeMachine != null) {
+            nativeMachine.requestInterrupt();
+        }
+    }
+
+    @Override
+    public void clearInterrupt() {
+        if (nativeMachine != null) {
+            nativeMachine.clearInterrupt();
+        }
     }
 
     @Override

@@ -73,6 +73,18 @@ public final class RedlineInstance implements AutoCloseable {
         return nativeBackend;
     }
 
+    public void requestInterrupt() {
+        if (factory instanceof Interruptable) {
+            ((Interruptable) factory).requestInterrupt();
+        }
+    }
+
+    public void clearInterrupt() {
+        if (factory instanceof Interruptable) {
+            ((Interruptable) factory).clearInterrupt();
+        }
+    }
+
     @SuppressWarnings("IllegalCatch")
     @Override
     public void close() {
