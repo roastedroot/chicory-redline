@@ -5,7 +5,6 @@ import com.dylibso.chicory.runtime.ImportValues;
 import com.dylibso.chicory.runtime.Instance;
 import com.dylibso.chicory.wasi.WasiOptions;
 import com.dylibso.chicory.wasi.WasiPreview1;
-import com.dylibso.chicory.wasm.ChicoryException;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.ValType;
 import java.util.HashMap;
@@ -60,7 +59,7 @@ public final class RedlineBridge implements AutoCloseable {
         if (op == ValType.ID.RefNull || op == ValType.ID.Ref) {
             return TYPE_I64;
         }
-        throw new ChicoryException("Unsupported type for trampoline: " + type);
+        throw new UnsupportedOperationException("Unsupported ValType for native: " + type);
     }
 
     public void init(String target) {
