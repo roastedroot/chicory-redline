@@ -74,23 +74,7 @@ final class EmitContext {
     }
 
     static int valTypeToBridgeType(ValType type) {
-        if (type.equals(ValType.I32)) {
-            return RedlineBridge.TYPE_I32;
-        }
-        if (type.equals(ValType.I64)) {
-            return RedlineBridge.TYPE_I64;
-        }
-        if (type.equals(ValType.F32)) {
-            return RedlineBridge.TYPE_F32;
-        }
-        if (type.equals(ValType.F64)) {
-            return RedlineBridge.TYPE_F64;
-        }
-        int op = type.opcode();
-        if (op == ValType.ID.RefNull || op == ValType.ID.Ref) {
-            return RedlineBridge.TYPE_I64;
-        }
-        throw new UnsupportedOperationException("Unsupported ValType for native: " + type);
+        return RedlineBridge.valTypeToBridgeType(type);
     }
 
     void emitReturnForFuncType() {

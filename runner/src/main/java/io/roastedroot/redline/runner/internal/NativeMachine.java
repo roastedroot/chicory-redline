@@ -6,8 +6,10 @@ import com.dylibso.chicory.wasm.ChicoryException;
 import com.dylibso.chicory.wasm.types.FunctionType;
 import com.dylibso.chicory.wasm.types.ValType;
 import com.dylibso.chicory.wasm.types.Value;
+import io.roastedroot.redline.api.RedlineTarget;
 import io.roastedroot.redline.api.internal.CtxBuffer;
 import io.roastedroot.redline.api.internal.TypeMapUtils;
+import io.roastedroot.redline.bridge.RedlineBridge;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -19,6 +21,8 @@ import java.lang.invoke.MethodType;
 import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.Function;
 
 /**
@@ -80,6 +84,8 @@ public final class NativeMachine implements Machine {
     private final MethodHandle[] downcalls;
     private final MemorySegment codeRegion;
     private final long codeRegionSize;
+    private MemorySegment trampolineRegion;
+    private long trampolineRegionSize;
     private final MemorySegment ctxBuffer;
     private final MemorySegment funcTable;
     private final MemorySegment argsBuffer;
@@ -94,7 +100,6 @@ public final class NativeMachine implements Machine {
     private MemorySegment cachedMemBase;
     private boolean memBaseInitialized;
     private final Cleaner.Cleanable cleanable;
-    // Pending exception from upcall stubs (cannot throw through native frames)
     private volatile Throwable pendingException;
 
     public NativeMachine(
@@ -199,16 +204,21 @@ public final class NativeMachine implements Machine {
         long totalSize = 0;
         for (byte[] code : compiledCode) {
             if (code != null) {
-                totalSize += align(code.length, 16);
+                totalSize += RedlineBridge.align(code.length, 16);
             }
         }
         totalSize = Math.max(totalSize, 4096);
-        totalSize = align(totalSize, 4096);
+        totalSize = RedlineBridge.align(totalSize, 4096);
         this.codeRegionSize = totalSize;
 
         try {
             codeRegion = PanamaExecutor.mmapCode(totalSize);
             long offset = 0;
+
+            // Track per-function code pointers and types for downcall creation after trampolines
+            MemorySegment[] funcCodePtrs = new MemorySegment[compiledCode.length];
+            FunctionType[] funcTypesByBody = new FunctionType[compiledCode.length];
+
             for (int i = 0; i < compiledCode.length; i++) {
                 if (compiledCode[i] != null) {
                     int funcId = numImports + i;
@@ -225,23 +235,111 @@ public final class NativeMachine implements Machine {
                                             .getType(module.functionSection().getFunctionType(i));
 
                     MemorySegment codePtr = codeRegion.asSlice(offset);
-                    downcalls[funcId] = createDowncall(codePtr, funcType);
+                    funcCodePtrs[i] = codePtr;
+                    funcTypesByBody[i] = funcType;
 
-                    // Store native code address in function pointer table
+                    // Store native code address in function pointer table (Tail convention)
                     funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, codePtr.address());
 
-                    offset += align(compiledCode[i].length, 16);
+                    offset += RedlineBridge.align(compiledCode[i].length, 16);
                 }
             }
             PanamaExecutor.mprotectExec(codeRegion, totalSize);
 
-            // Create import upcall stubs and store in function pointer table
+            // Create import upcall stubs (platform ABI)
+            MemorySegment[] importStubs = new MemorySegment[numImports];
+            FunctionType[] importTypes = new FunctionType[numImports];
             for (int funcId = 0; funcId < numImports; funcId++) {
                 var importFunc = instance.imports().function(funcId);
                 var funcType = importFunc.functionType();
-                MemorySegment stub = createImportStub(funcId, funcType);
-                funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, stub.address());
+                importStubs[funcId] = createImportStub(funcId, funcType);
+                importTypes[funcId] = funcType;
                 downcalls[funcId] = null; // imports dispatch through call() directly
+            }
+
+            // Compile ABI trampolines via Cranelift bridge
+            long[] importStubAddrs = new long[numImports];
+            for (int i = 0; i < numImports; i++) {
+                importStubAddrs[i] = importStubs[i].address();
+            }
+            try (var bridge = new RedlineBridge()) {
+                bridge.init(RedlineTarget.detectHost());
+                var trampolines =
+                        bridge.compileTrampolines(
+                                compiledCode,
+                                funcTypesByBody,
+                                importTypes,
+                                importStubAddrs,
+                                trampolineStub.address(),
+                                memGrowStub.address(),
+                                PanamaExecutor.MEMMOVE_ADDR,
+                                PanamaExecutor.MEMSET_ADDR);
+
+                long trampTotalSize = Math.max(trampolines.totalSize(), 4096);
+                trampTotalSize = RedlineBridge.align(trampTotalSize, 4096);
+                this.trampolineRegionSize = trampTotalSize;
+
+                // Mmap and copy trampoline code
+                trampolineRegion = PanamaExecutor.mmapCode(trampTotalSize);
+                long trampOffset = 0;
+
+                // Copy entry trampolines and record their addresses
+                Map<FunctionType, MemorySegment> entryTrampolinePtrs = new HashMap<>();
+                for (var entry : trampolines.entryTrampolines().entrySet()) {
+                    entryTrampolinePtrs.put(entry.getKey(), trampolineRegion.asSlice(trampOffset));
+                    trampOffset = copyCode(entry.getValue(), trampolineRegion, trampOffset);
+                }
+
+                // Copy import trampolines and store addresses in funcTable
+                for (int funcId = 0; funcId < numImports; funcId++) {
+                    byte[] code = trampolines.importTrampolines()[funcId];
+                    long addr = trampolineRegion.asSlice(trampOffset).address();
+                    trampOffset = copyCode(code, trampolineRegion, trampOffset);
+                    funcTable.set(ValueLayout.JAVA_LONG, (long) funcId * 8, addr);
+                }
+
+                // Copy internal stub trampolines and update ctxBuffer
+                trampOffset =
+                        copyCodeAndUpdateCtx(
+                                trampolines.trampolineStubTramp(),
+                                trampolineRegion,
+                                trampOffset,
+                                ctxBuffer,
+                                CtxBuffer.TRAMPOLINE_PTR);
+                trampOffset =
+                        copyCodeAndUpdateCtx(
+                                trampolines.memGrowStubTramp(),
+                                trampolineRegion,
+                                trampOffset,
+                                ctxBuffer,
+                                CtxBuffer.MEM_GROW_PTR);
+                trampOffset =
+                        copyCodeAndUpdateCtx(
+                                trampolines.memmoveTramp(),
+                                trampolineRegion,
+                                trampOffset,
+                                ctxBuffer,
+                                CtxBuffer.MEMMOVE_PTR);
+                trampOffset =
+                        copyCodeAndUpdateCtx(
+                                trampolines.memsetTramp(),
+                                trampolineRegion,
+                                trampOffset,
+                                ctxBuffer,
+                                CtxBuffer.MEMSET_PTR);
+
+                PanamaExecutor.mprotectExec(trampolineRegion, trampTotalSize);
+
+                // Create downcall handles via entry trampolines
+                for (int i = 0; i < compiledCode.length; i++) {
+                    if (compiledCode[i] != null) {
+                        int funcId = numImports + i;
+                        MemorySegment trampolinePtr = entryTrampolinePtrs.get(funcTypesByBody[i]);
+                        downcalls[funcId] =
+                                createDowncallViaTrampoline(
+                                        trampolinePtr, funcCodePtrs[i], funcTypesByBody[i]);
+                    }
+                }
             }
 
         } catch (Throwable e) {
@@ -252,11 +350,17 @@ public final class NativeMachine implements Machine {
         NativeMemory nativeMemory = instance.memory() instanceof NativeMemory nm ? nm : null;
 
         // Register cleanup: close arena (frees all off-heap allocations + upcall stubs),
-        // munmap the executable code region, and munmap the NativeMemory reservation.
-        // Runs on explicit close() or when GC'd.
+        // munmap the executable code region, trampoline region, and NativeMemory reservation.
         this.cleanable =
                 CLEANER.register(
-                        this, new CleanupAction(arena, codeRegion, codeRegionSize, nativeMemory));
+                        this,
+                        new CleanupAction(
+                                arena,
+                                codeRegion,
+                                codeRegionSize,
+                                trampolineRegion,
+                                trampolineRegionSize,
+                                nativeMemory));
     }
 
     /** Explicitly release all native resources (arena + code region). Idempotent. */
@@ -265,7 +369,12 @@ public final class NativeMachine implements Machine {
     }
 
     private record CleanupAction(
-            Arena arena, MemorySegment codeRegion, long codeRegionSize, NativeMemory nativeMemory)
+            Arena arena,
+            MemorySegment codeRegion,
+            long codeRegionSize,
+            MemorySegment trampolineRegion,
+            long trampolineRegionSize,
+            NativeMemory nativeMemory)
             implements Runnable {
         @Override
         public void run() {
@@ -282,6 +391,13 @@ public final class NativeMachine implements Machine {
             } catch (Throwable e) {
                 // ignore cleanup errors
             }
+            try {
+                if (trampolineRegion != null && trampolineRegionSize > 0) {
+                    PanamaExecutor.munmap(trampolineRegion, trampolineRegionSize);
+                }
+            } catch (Throwable e) {
+                // ignore cleanup errors
+            }
         }
     }
 
@@ -290,14 +406,14 @@ public final class NativeMachine implements Machine {
         throw (E) e;
     }
 
-    private static long align(long value, long alignment) {
-        return (value + alignment - 1) & ~(alignment - 1);
-    }
+    // --- Downcall creation (Java → native via entry trampoline) ---
 
-    // --- Downcall creation (Java → native) ---
-
-    private MethodHandle createDowncall(MemorySegment codePtr, FunctionType funcType) {
+    private MethodHandle createDowncallViaTrampoline(
+            MemorySegment trampolinePtr, MemorySegment funcCodePtr, FunctionType funcType) {
+        // Entry trampoline has platform ABI signature:
+        // (ADDRESS funcPtr, ADDRESS memBase, ADDRESS ctxPtr, typed_params...) -> typed_return
         var layouts = new ArrayList<ValueLayout>();
+        layouts.add(ValueLayout.ADDRESS); // funcPtr
         layouts.add(ValueLayout.ADDRESS); // memBase
         layouts.add(ValueLayout.ADDRESS); // ctxPtr
 
@@ -308,7 +424,6 @@ public final class NativeMachine implements Machine {
         ValueLayout returnLayout = null;
         if (!funcType.returns().isEmpty()) {
             if (funcType.returns().size() > 1) {
-                // Multi-return: native function returns single i64 dummy
                 returnLayout = ValueLayout.JAVA_LONG;
             } else {
                 returnLayout = valTypeToLayout(funcType.returns().get(0));
@@ -322,7 +437,10 @@ public final class NativeMachine implements Machine {
             desc = FunctionDescriptor.ofVoid(layouts.toArray(new ValueLayout[0]));
         }
 
-        MethodHandle handle = Linker.nativeLinker().downcallHandle(codePtr, desc);
+        MethodHandle handle = Linker.nativeLinker().downcallHandle(trampolinePtr, desc);
+        // Bind the wasm function pointer as the first argument so the call site
+        // signature remains (memBase, ctxPtr, args...) -> result
+        handle = MethodHandles.insertArguments(handle, 0, funcCodePtr);
         return adaptHandle(handle, funcType);
     }
 
@@ -843,6 +961,19 @@ public final class NativeMachine implements Machine {
             case CtxBuffer.TRAP_INTERRUPTED -> new ChicoryException("interrupted");
             default -> new ChicoryException("trap: unknown code " + trapCode);
         };
+    }
+
+    // --- Trampoline copy helpers ---
+
+    private static long copyCode(byte[] code, MemorySegment region, long offset) {
+        MemorySegment.copy(MemorySegment.ofArray(code), 0, region, offset, code.length);
+        return offset + RedlineBridge.align(code.length, 16);
+    }
+
+    private static long copyCodeAndUpdateCtx(
+            byte[] code, MemorySegment region, long offset, MemorySegment ctxBuf, long ctxOffset) {
+        ctxBuf.set(ValueLayout.JAVA_LONG, ctxOffset, region.asSlice(offset).address());
+        return copyCode(code, region, offset);
     }
 
     // --- Main dispatch ---

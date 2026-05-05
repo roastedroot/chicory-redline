@@ -17,12 +17,16 @@ import com.kenai.jffi.Library;
 import com.kenai.jffi.MemoryIO;
 import com.kenai.jffi.PageManager;
 import com.kenai.jffi.Type;
+import io.roastedroot.redline.api.RedlineTarget;
 import io.roastedroot.redline.api.internal.CtxBuffer;
 import io.roastedroot.redline.api.internal.TypeMapUtils;
+import io.roastedroot.redline.bridge.RedlineBridge;
 import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Machine implementation that compiles Wasm functions to native x86_64
@@ -81,10 +85,13 @@ public final class JffiNativeMachine implements Machine {
     }
 
     private final Instance instance;
-    private final CallContext[] callContexts; // jffi CallContext per compiled func
+    private final CallContext[] entryTrampolineCallCtxs; // entry trampoline CallContext per func
+    private final long[] entryTrampolineAddrs; // entry trampoline native addr per func
     private final FunctionType[] funcTypes; // wasm FunctionType per func
     private final long codeRegionAddr;
     private final int codeRegionOsPages;
+    private long trampolineRegionAddr;
+    private int trampolineRegionOsPages;
     private final long ctxBufferAddr;
     private final long funcTableAddr;
     private final long funcTableSize; // byte size
@@ -130,7 +137,8 @@ public final class JffiNativeMachine implements Machine {
                                                                 .ExternalType.FUNCTION)
                                 .count();
         int totalFuncs = numImports + module.codeSection().functionBodyCount();
-        this.callContexts = new CallContext[totalFuncs];
+        this.entryTrampolineCallCtxs = new CallContext[totalFuncs];
+        this.entryTrampolineAddrs = new long[totalFuncs];
         this.funcTypes = new FunctionType[totalFuncs];
         this.importHandles = new Closure.Handle[numImports];
 
@@ -212,11 +220,11 @@ public final class JffiNativeMachine implements Machine {
         long totalSize = 0;
         for (byte[] code : compiledCode) {
             if (code != null) {
-                totalSize += align(code.length, 16);
+                totalSize += RedlineBridge.align(code.length, 16);
             }
         }
         totalSize = Math.max(totalSize, 4096);
-        totalSize = align(totalSize, 4096);
+        totalSize = RedlineBridge.align(totalSize, 4096);
 
         // Allocate executable code region via PageManager
         int osPageSize = (int) PM.pageSize();
@@ -228,8 +236,11 @@ public final class JffiNativeMachine implements Machine {
         }
 
         try {
-            // Copy code and create Function objects
+            // Copy code and track per-function addresses and types
             long offset = 0;
+            long[] funcCodeAddrs = new long[compiledCode.length];
+            FunctionType[] funcTypesByBody = new FunctionType[compiledCode.length];
+
             for (int i = 0; i < compiledCode.length; i++) {
                 if (compiledCode[i] != null) {
                     int funcId = numImports + i;
@@ -242,13 +253,14 @@ public final class JffiNativeMachine implements Machine {
                                             .getType(module.functionSection().getFunctionType(i));
 
                     long codePtr = codeRegionAddr + offset;
-                    callContexts[funcId] = createCallContext(funcType);
+                    funcCodeAddrs[i] = codePtr;
+                    funcTypesByBody[i] = funcType;
                     funcTypes[funcId] = funcType;
 
-                    // Store native code address in function pointer table
+                    // Store native code address in function pointer table (Tail convention)
                     MEM.putLong(funcTableAddr + (long) funcId * 8, codePtr);
 
-                    offset += align(compiledCode[i].length, 16);
+                    offset += RedlineBridge.align(compiledCode[i].length, 16);
                 }
             }
 
@@ -258,15 +270,110 @@ public final class JffiNativeMachine implements Machine {
                     codeRegionOsPages,
                     PageManager.PROT_READ | PageManager.PROT_EXEC);
 
-            // Create import closures and store in function pointer table
+            // Create import closures (platform ABI)
+            long[] importStubAddrs = new long[numImports];
+            FunctionType[] importTypes = new FunctionType[numImports];
             for (int funcId = 0; funcId < numImports; funcId++) {
                 var importFunc = instance.imports().function(funcId);
                 var funcType = importFunc.functionType();
                 funcTypes[funcId] = funcType;
                 Closure.Handle handle = createImportStub(funcId, funcType);
                 importHandles[funcId] = handle;
-                MEM.putLong(funcTableAddr + (long) funcId * 8, handle.getAddress());
+                importStubAddrs[funcId] = handle.getAddress();
+                importTypes[funcId] = funcType;
             }
+
+            // Compile ABI trampolines via Cranelift bridge
+            try (var bridge = new RedlineBridge()) {
+                bridge.init(RedlineTarget.detectHost());
+                var trampolines =
+                        bridge.compileTrampolines(
+                                compiledCode,
+                                funcTypesByBody,
+                                importTypes,
+                                importStubAddrs,
+                                trampolineHandle.getAddress(),
+                                memGrowHandle.getAddress(),
+                                MEMMOVE_ADDR,
+                                MEMSET_ADDR);
+
+                long trampTotalSize = Math.max(trampolines.totalSize(), 4096);
+                trampTotalSize = RedlineBridge.align(trampTotalSize, 4096);
+
+                // Allocate trampoline code region
+                this.trampolineRegionOsPages =
+                        (int) ((trampTotalSize + osPageSize - 1) / osPageSize);
+                this.trampolineRegionAddr =
+                        PM.allocatePages(
+                                trampolineRegionOsPages,
+                                PageManager.PROT_READ | PageManager.PROT_WRITE);
+                if (trampolineRegionAddr == 0 || trampolineRegionAddr == -1) {
+                    throw new ChicoryException("Failed to allocate trampoline code pages");
+                }
+
+                long trampOffset = 0;
+
+                // Copy entry trampolines and record their addresses
+                Map<FunctionType, Long> entryTrampolinePtrs = new HashMap<>();
+                for (var entry : trampolines.entryTrampolines().entrySet()) {
+                    entryTrampolinePtrs.put(entry.getKey(), trampolineRegionAddr + trampOffset);
+                    trampOffset = copyCode(entry.getValue(), trampolineRegionAddr, trampOffset);
+                }
+
+                // Copy import trampolines and store addresses in funcTable
+                for (int funcId = 0; funcId < numImports; funcId++) {
+                    byte[] code = trampolines.importTrampolines()[funcId];
+                    MEM.putLong(
+                            funcTableAddr + (long) funcId * 8, trampolineRegionAddr + trampOffset);
+                    trampOffset = copyCode(code, trampolineRegionAddr, trampOffset);
+                }
+
+                // Copy internal stub trampolines and update ctxBuffer
+                trampOffset =
+                        copyCodeAndUpdateCtx(
+                                trampolines.trampolineStubTramp(),
+                                trampolineRegionAddr,
+                                trampOffset,
+                                ctxBufferAddr,
+                                CtxBuffer.TRAMPOLINE_PTR);
+                trampOffset =
+                        copyCodeAndUpdateCtx(
+                                trampolines.memGrowStubTramp(),
+                                trampolineRegionAddr,
+                                trampOffset,
+                                ctxBufferAddr,
+                                CtxBuffer.MEM_GROW_PTR);
+                trampOffset =
+                        copyCodeAndUpdateCtx(
+                                trampolines.memmoveTramp(),
+                                trampolineRegionAddr,
+                                trampOffset,
+                                ctxBufferAddr,
+                                CtxBuffer.MEMMOVE_PTR);
+                trampOffset =
+                        copyCodeAndUpdateCtx(
+                                trampolines.memsetTramp(),
+                                trampolineRegionAddr,
+                                trampOffset,
+                                ctxBufferAddr,
+                                CtxBuffer.MEMSET_PTR);
+
+                PM.protectPages(
+                        trampolineRegionAddr,
+                        trampolineRegionOsPages,
+                        PageManager.PROT_READ | PageManager.PROT_EXEC);
+
+                // Set per-function entry trampoline addresses and CallContexts
+                for (int i = 0; i < compiledCode.length; i++) {
+                    if (compiledCode[i] != null) {
+                        int funcId = numImports + i;
+                        entryTrampolineAddrs[funcId] = entryTrampolinePtrs.get(funcTypesByBody[i]);
+                        entryTrampolineCallCtxs[funcId] =
+                                createEntryTrampolineCallContext(funcTypesByBody[i]);
+                    }
+                }
+            }
+
         } catch (ChicoryException e) {
             throw e;
         } catch (Throwable e) {
@@ -289,6 +396,8 @@ public final class JffiNativeMachine implements Machine {
                                 funcTypesArrayAddr,
                                 codeRegionAddr,
                                 codeRegionOsPages,
+                                trampolineRegionAddr,
+                                trampolineRegionOsPages,
                                 trampolineHandle,
                                 memGrowHandle,
                                 importHandles,
@@ -313,6 +422,8 @@ public final class JffiNativeMachine implements Machine {
         private final long funcTypesArrayAddr;
         private final long codeRegionAddr;
         private final int codeRegionOsPages;
+        private final long trampolineRegionAddr;
+        private final int trampolineRegionOsPages;
         private final Closure.Handle trampolineHandle;
         private final Closure.Handle memGrowHandle;
         private final Closure.Handle[] importHandles;
@@ -326,6 +437,8 @@ public final class JffiNativeMachine implements Machine {
                 long funcTypesArrayAddr,
                 long codeRegionAddr,
                 int codeRegionOsPages,
+                long trampolineRegionAddr,
+                int trampolineRegionOsPages,
                 Closure.Handle trampolineHandle,
                 Closure.Handle memGrowHandle,
                 Closure.Handle[] importHandles,
@@ -337,6 +450,8 @@ public final class JffiNativeMachine implements Machine {
             this.funcTypesArrayAddr = funcTypesArrayAddr;
             this.codeRegionAddr = codeRegionAddr;
             this.codeRegionOsPages = codeRegionOsPages;
+            this.trampolineRegionAddr = trampolineRegionAddr;
+            this.trampolineRegionOsPages = trampolineRegionOsPages;
             this.trampolineHandle = trampolineHandle;
             this.memGrowHandle = memGrowHandle;
             this.importHandles = importHandles;
@@ -377,6 +492,10 @@ public final class JffiNativeMachine implements Machine {
             if (codeRegionOsPages > 0 && codeRegionAddr != 0) {
                 PM.freePages(codeRegionAddr, codeRegionOsPages);
             }
+            // Free trampoline region
+            if (trampolineRegionOsPages > 0 && trampolineRegionAddr != 0) {
+                PM.freePages(trampolineRegionAddr, trampolineRegionOsPages);
+            }
             // Free buffers
             MEM.freeMemory(ctxBufferAddr);
             MEM.freeMemory(funcTableAddr);
@@ -388,10 +507,6 @@ public final class JffiNativeMachine implements Machine {
     @SuppressWarnings("unchecked")
     private static <E extends Throwable> void sneakyThrow(Throwable e) throws E {
         throw (E) e;
-    }
-
-    private static long align(long value, long alignment) {
-        return (value + alignment - 1) & ~(alignment - 1);
     }
 
     // --- jffi type mapping ---
@@ -416,8 +531,9 @@ public final class JffiNativeMachine implements Machine {
         throw new ChicoryException("Unsupported type for native: " + type);
     }
 
-    private static CallContext createCallContext(FunctionType funcType) {
+    private static CallContext createEntryTrampolineCallContext(FunctionType funcType) {
         var paramTypes = new ArrayList<Type>();
+        paramTypes.add(Type.POINTER); // funcPtr (first arg to entry trampoline)
         paramTypes.add(Type.POINTER); // memBase
         paramTypes.add(Type.POINTER); // ctxPtr
         for (ValType param : funcType.params()) {
@@ -428,7 +544,7 @@ public final class JffiNativeMachine implements Machine {
         if (funcType.returns().isEmpty()) {
             returnType = Type.VOID;
         } else if (funcType.returns().size() > 1) {
-            returnType = Type.SINT64; // multi-return: native returns dummy
+            returnType = Type.SINT64;
         } else {
             returnType = valTypeToJffiType(funcType.returns().get(0));
         }
@@ -878,52 +994,67 @@ public final class JffiNativeMachine implements Machine {
 
     // --- Native function invocation ---
 
-    private long invokeNative(
-            CallContext callCtx,
-            long funcAddr,
+    private long invokeViaEntryTrampoline(
+            CallContext trampolineCallCtx,
+            long trampolineAddr,
             FunctionType funcType,
+            long funcAddr,
             long memBase,
             long ctxPtr,
             long[] wasmArgs) {
-        int nativeArgCount = 2 + wasmArgs.length;
+        // nativeArgCount = funcPtr + memBase + ctxPtr + wasm params
+        int nativeArgCount = 3 + wasmArgs.length;
 
-        // Fast path: ≤6 native args use invokeN* (CallContext + address + args)
         switch (nativeArgCount) {
-            case 2:
-                return INVOKER.invokeN2(callCtx, funcAddr, memBase, ctxPtr);
             case 3:
-                return INVOKER.invokeN3(callCtx, funcAddr, memBase, ctxPtr, wasmArgs[0]);
+                return INVOKER.invokeN3(
+                        trampolineCallCtx, trampolineAddr, funcAddr, memBase, ctxPtr);
             case 4:
                 return INVOKER.invokeN4(
-                        callCtx, funcAddr, memBase, ctxPtr, wasmArgs[0], wasmArgs[1]);
+                        trampolineCallCtx, trampolineAddr, funcAddr, memBase, ctxPtr, wasmArgs[0]);
             case 5:
                 return INVOKER.invokeN5(
-                        callCtx, funcAddr, memBase, ctxPtr, wasmArgs[0], wasmArgs[1], wasmArgs[2]);
+                        trampolineCallCtx,
+                        trampolineAddr,
+                        funcAddr,
+                        memBase,
+                        ctxPtr,
+                        wasmArgs[0],
+                        wasmArgs[1]);
             case 6:
                 return INVOKER.invokeN6(
-                        callCtx,
+                        trampolineCallCtx,
+                        trampolineAddr,
                         funcAddr,
                         memBase,
                         ctxPtr,
                         wasmArgs[0],
                         wasmArgs[1],
-                        wasmArgs[2],
-                        wasmArgs[3]);
+                        wasmArgs[2]);
             default:
                 // >6 args: use HeapInvocationBuffer
-                return invokeViaBuffer(callCtx, funcAddr, funcType, memBase, ctxPtr, wasmArgs);
+                return invokeViaBufferWithTrampoline(
+                        trampolineCallCtx,
+                        trampolineAddr,
+                        funcType,
+                        funcAddr,
+                        memBase,
+                        ctxPtr,
+                        wasmArgs);
         }
     }
 
-    private long invokeViaBuffer(
-            CallContext callCtx,
-            long funcAddr,
+    private long invokeViaBufferWithTrampoline(
+            CallContext trampolineCallCtx,
+            long trampolineAddr,
             FunctionType funcType,
+            long funcAddr,
             long memBase,
             long ctxPtr,
             long[] wasmArgs) {
-        var func = new Function(funcAddr, callCtx);
+        var func = new Function(trampolineAddr, trampolineCallCtx);
         var buffer = new HeapInvocationBuffer(func);
+        buffer.putAddress(funcAddr); // funcPtr (first arg to entry trampoline)
         buffer.putAddress(memBase);
         buffer.putAddress(ctxPtr);
         for (int i = 0; i < wasmArgs.length; i++) {
@@ -935,13 +1066,24 @@ public final class JffiNativeMachine implements Machine {
             } else if (paramType.equals(ValType.F64)) {
                 buffer.putDouble(Double.longBitsToDouble(wasmArgs[i]));
             } else {
-                // I64, ref types
                 buffer.putLong(wasmArgs[i]);
             }
         }
 
-        // invokeLong works for all return types in buffer path
         return INVOKER.invokeLong(func, buffer);
+    }
+
+    // --- Trampoline copy helpers ---
+
+    private static long copyCode(byte[] code, long regionAddr, long offset) {
+        MEM.putByteArray(regionAddr + offset, code, 0, code.length);
+        return offset + RedlineBridge.align(code.length, 16);
+    }
+
+    private static long copyCodeAndUpdateCtx(
+            byte[] code, long regionAddr, long offset, long ctxAddr, long ctxOffset) {
+        MEM.putLong(ctxAddr + ctxOffset, regionAddr + offset);
+        return copyCode(code, regionAddr, offset);
     }
 
     // --- Main dispatch ---
@@ -954,9 +1096,10 @@ public final class JffiNativeMachine implements Machine {
             return imprt.handle().apply(instance, args);
         }
 
-        var callCtx = callContexts[funcId];
         var funcType = funcTypes[funcId];
         long funcAddr = MEM.getLong(funcTableAddr + (long) funcId * 8);
+        long trampolineAddr = entryTrampolineAddrs[funcId];
+        var trampolineCallCtx = entryTrampolineCallCtxs[funcId];
 
         try {
             initializeImportGlobals();
@@ -1012,8 +1155,14 @@ public final class JffiNativeMachine implements Machine {
             long result;
             try {
                 result =
-                        invokeNative(
-                                callCtx, funcAddr, funcType, cachedMemBase, ctxBufferAddr, args);
+                        invokeViaEntryTrampoline(
+                                trampolineCallCtx,
+                                trampolineAddr,
+                                funcType,
+                                funcAddr,
+                                cachedMemBase,
+                                ctxBufferAddr,
+                                args);
             } finally {
                 watchdog.interrupt();
             }
