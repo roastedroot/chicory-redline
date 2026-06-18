@@ -31,10 +31,10 @@ jobs:
         java-version: [25]
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Checkout Chicory
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         repository: dylibso/chicory
         ref: main
@@ -75,10 +75,10 @@ jobs:
           - windows-latest
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Checkout Chicory
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         repository: dylibso/chicory
         ref: main
