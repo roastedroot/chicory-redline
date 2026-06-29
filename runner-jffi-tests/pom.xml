@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.roastedroot</groupId>
     <artifactId>chicory-redline-parent</artifactId>
-    <version>999-SNAPSHOT</version>
+    <version>0.0.5</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>redline-runner-jffi-tests</artifactId>
@@ -28,16 +28,6 @@
       <artifactId>wasm</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.roastedroot</groupId>
-      <artifactId>redline-api</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.roastedroot</groupId>
-      <artifactId>redline-runner-jffi</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
       <groupId>com.github.jnr</groupId>
       <artifactId>jffi</artifactId>
       <version>1.4.0</version>
@@ -47,6 +37,16 @@
       <artifactId>jffi</artifactId>
       <version>1.4.0</version>
       <classifier>native</classifier>
+    </dependency>
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>redline-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.roastedroot</groupId>
+      <artifactId>redline-runner-jffi</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.dylibso.chicory</groupId>

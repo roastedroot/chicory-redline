@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.roastedroot</groupId>
     <artifactId>chicory-redline-parent</artifactId>
-    <version>999-SNAPSHOT</version>
+    <version>0.0.5</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>redline-runner-jffi</artifactId>
@@ -24,12 +24,6 @@
       <artifactId>wasm</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.github.jnr</groupId>
-      <artifactId>jffi</artifactId>
-      <version>${jffi.version}</version>
-      <scope>provided</scope>
-    </dependency>
-    <dependency>
       <groupId>io.roastedroot</groupId>
       <artifactId>redline-api</artifactId>
       <version>${project.version}</version>
@@ -38,6 +32,12 @@
       <groupId>io.roastedroot</groupId>
       <artifactId>redline-bridge</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.github.jnr</groupId>
+      <artifactId>jffi</artifactId>
+      <version>${jffi.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.github.jnr</groupId>
