@@ -7,7 +7,15 @@
   Build time Compiler for Wasm in Java.
 </p>
 
-> ⚠️ **Experimental** — This project is under active development. APIs may change without notice.
+> 🗄️ **Archived** — This spike has been fully integrated into [Endive](https://github.com/bytecodealliance/endive) and is no longer developed here.
+>
+> Where to go:
+> - **Documentation**: [Native Compilation with Redline](https://endive.run/docs/experimental/redline) on [endive.run](https://endive.run/)
+> - **Source code**: [`redline/`](https://github.com/bytecodealliance/endive/tree/main/redline) module in the Endive repository
+> - **Issues and discussions**: [bytecodealliance/endive](https://github.com/bytecodealliance/endive/issues)
+> - **Maven coordinates**: `run.endive` group, artifacts `redline-runner-experimental` (Panama, Java 25+) and `redline-runner-jffi-experimental` (Java 11+), enabled through `endive-compiler-maven-plugin` with `<redlineExperimental>true</redlineExperimental>`
+>
+> The content below is kept for historical reference only.
 
 ## How It Works
 
